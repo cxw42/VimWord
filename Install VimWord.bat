@@ -35,6 +35,13 @@ if not exist %src% goto :nosource
 echo d | xcopy %src% "%appdata%\Microsoft\Word\Startup" /v /f /y
 if errorlevel 1 goto error
 
+set src="%whereami%VimWordScratchpad.dotm"
+echo Installing from %src%...
+if not exist %src% goto :nosource
+
+echo d | xcopy %src% "%appdata%\Microsoft\Word\Startup" /v /f /y
+if errorlevel 1 goto error
+
 :: success ::
 
 echo Installed successfully!
