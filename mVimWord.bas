@@ -10,7 +10,7 @@ Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2, 2018-04-20.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.1, 2018-04-20.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -27,7 +27,7 @@ Public Sub VimDoCommand()
     atStart = Empty
     Set proczone = GetProczone_V(doc:=doc, _
                         iswholedoc:=coll, start_is_active:=atStart)
-                        
+
     If coll Then    ' coll => collapsed selection, so don't use the whole doc
                     ' (which is what GetProczone_V gave us)
         Set proczone = doc.ActiveWindow.Selection.Range.Duplicate
@@ -44,7 +44,7 @@ Public Sub VimDoCommand()
     Dim motionc As Long
     Dim cmdstr As String
     Dim arg As String
-    
+
     If Not frm.WasCancelled Then
         cmdstr = frm.Keys
         oper = frm.VOperator
@@ -53,13 +53,13 @@ Public Sub VimDoCommand()
         motionc = frm.VMotionCount
         arg = frm.VArg
     End If
-    
+
     Unload frm
     Set frm = Nothing
     If oper = voUndef Or motion = vmUndef Then
         Exit Sub
     End If
-    
+
     vimRunCommand doc, proczone, coll, atStart, oper, motion, operc, motionc, cmdstr, arg
 End Sub 'VimDoCommand
 
@@ -78,28 +78,28 @@ Public Sub vimRunCommand( _
     Dim TITLE As String: TITLE = "Do Vim command"
     Dim CSET_WS As String: CSET_WS = " " & Chr(9) & Chr(10) & Chr(12) & Chr(13)
         ' NOT comment markers since I've been having problems with those lately
-    
+
     Dim count As Long
     count = operc * motionc  ' per motion.txt#operator
-    
+
     Dim undos As UndoRecord
     Set undos = Application.UndoRecord
 
     ' Run the command
-    
+
     On Error GoTo VRC_Err
     undos.StartCustomRecord TITLE & ": " & cmdstr
     Application.ScreenUpdating = False
 
     Dim colldir As WdCollapseDirection
     colldir = wdCollapseEnd ' by default
-    
+
     Dim idx As Long
 
     Select Case motion
         Case vmLeft: proczone.MoveStart wdCharacter, -count: colldir = wdCollapseStart
         Case vmRight: proczone.MoveEnd wdCharacter, count: colldir = wdCollapseEnd
-        
+
         Case vmUp, vmDown:
             Set proczone = MoveVertical_( _
                 motion = vmUp, _
@@ -108,45 +108,45 @@ Public Sub vimRunCommand( _
                 doc, _
                 proczone, _
                 colldir)
-            
+
         Case vmStartOfLine, vmEOL:
             Set proczone = moveHorizontal_( _
                 motion = vmStartOfLine, doc, proczone, colldir)
-        
+
         Case vmStartOfParagraph: proczone.Start = proczone.Paragraphs(1).Range.Start: colldir = wdCollapseStart
-        
+
         'TODO Case vmLine
-        
+
         Case vmCharForward:
             colldir = wdCollapseEnd
             If proczone.MoveEndUntil(arg, wdForward) <> 0 Then
                 proczone.MoveEnd wdCharacter, 1     ' f => to and including
             End If
-            
+
         Case vmCharBackward:
             colldir = wdCollapseStart
             If proczone.MoveEndUntil(arg, wdBackward) <> 0 Then
                 proczone.MoveStart wdCharacter, -1     ' F => to and including
             End If
-            
+
         Case vmTilForward: proczone.MoveEndUntil arg, wdForward: colldir = wdCollapseEnd
         Case vmTilBackward: proczone.MoveStartUntil arg, wdBackward: colldir = wdCollapseStart
-        
+
         Case vmWordForward: proczone.MoveEnd wdWord, count: colldir = wdCollapseEnd
         Case vmEOWordForward:
             colldir = wdCollapseEnd
             proczone.MoveEnd wdWord, count
             proczone.MoveEndWhile CSET_WS, wdBackward
-            
+
         Case vmWordBackward: proczone.MoveStart wdWord, -count: colldir = wdCollapseStart
-            
+
         Case vmNonblankForward:
             colldir = wdCollapseEnd
             For idx = 1 To count
                 proczone.MoveEndUntil CSET_WS, wdForward
                 proczone.MoveEndWhile CSET_WS, wdForward
             Next idx
-            
+
         Case vmEONonblankForward:
             colldir = wdCollapseEnd
             proczone.MoveEndUntil CSET_WS, wdForward
@@ -154,7 +154,7 @@ Public Sub vimRunCommand( _
                 proczone.MoveEndWhile CSET_WS, wdForward
                 proczone.MoveEndUntil CSET_WS, wdForward
             Next idx
-            
+
         Case vmNonblankBackward:
             colldir = wdCollapseStart
             proczone.MoveStartUntil CSET_WS, wdBackward
@@ -162,24 +162,24 @@ Public Sub vimRunCommand( _
                 proczone.MoveStartWhile CSET_WS, wdBackward
                 proczone.MoveStartUntil CSET_WS, wdBackward
             Next idx
-            
+
         Case vmSentenceForward: proczone.MoveEnd wdSentence, count: colldir = wdCollapseEnd
         Case vmSentenceBackward: proczone.MoveStart wdSentence, -count: colldir = wdCollapseStart
         Case vmParaForward: proczone.MoveEnd wdParagraph, count: colldir = wdCollapseEnd
         Case vmParaBackward: proczone.MoveStart wdParagraph, -count: colldir = wdCollapseStart
-    
+
         ' Non-collapsing ones
         Case vmAWord:
             proczone.Expand wdWord
             coll = False
             If count > 1 Then proczone.MoveEnd wdWord, count - 1
-            
+
         Case vmIWord:
             proczone.Expand wdWord
             coll = False
             If count > 1 Then proczone.MoveEnd wdWord, count - 1
             proczone.MoveEndWhile CSET_WS, wdBackward
-            
+
         Case vmANonblank:
             coll = False
             proczone.MoveStartUntil CSET_WS, wdBackward
@@ -187,7 +187,7 @@ Public Sub vimRunCommand( _
                 proczone.MoveEndUntil CSET_WS, wdForward
                 proczone.MoveEndWhile CSET_WS, wdForward    ' aW includes the trailing WS
             Next idx
-            
+
         Case vmINonblank:
             coll = False
             proczone.MoveStartUntil CSET_WS, wdBackward
@@ -196,29 +196,29 @@ Public Sub vimRunCommand( _
                 proczone.MoveEndWhile CSET_WS, wdForward
                 proczone.MoveEndUntil CSET_WS, wdForward    ' iW excludes the trailing WS
             Next idx
-        
+
         Case vmASentence:
             proczone.Expand wdSentence
             coll = False
             If count > 1 Then proczone.MoveEnd wdSentence, count - 1
-        
+
         Case vmISentence:
             proczone.Expand wdSentence
             If count > 1 Then proczone.MoveEnd wdSentence, count - 1
             proczone.MoveEndWhile CSET_WS, wdBackward
             coll = False
-            
+
         Case vmAPara:
             proczone.Expand wdParagraph
             coll = False
             If count > 1 Then proczone.MoveEnd wdParagraph, count - 1
-            
+
         Case vmIPara
             proczone.Expand wdParagraph
             If count > 1 Then proczone.MoveEnd wdParagraph, count - 1
             proczone.MoveEndWhile CSET_WS, wdBackward
             coll = False
-        
+
         Case Else: GoTo VRC_Finally     ' Unimplemented is not an error
     End Select ' motion
 
@@ -231,13 +231,13 @@ Public Sub vimRunCommand( _
             GoTo VRC_Finally
         ' voGo, voSelect handled below
     End Select 'operator
-    
+
     If (oper = voGo) And coll Then
         proczone.Collapse colldir
     End If
-    
+
     proczone.Select     ' Handles voSelect
-    
+
 VRC_Finally:
     On Error Resume Next    ' or else errors in the cleanup code cause infinite loops
     Application.ScreenUpdating = True
@@ -259,14 +259,14 @@ Private Function MoveVertical_(isUp As Boolean, count As Long, _
     Dim r As Range
     Set r = proczone.Duplicate
     r.Select
-    
+
     colldir = IIf(atStart, wdCollapseStart, wdCollapseEnd)
     With doc.ActiveWindow.Selection
         .Collapse colldir
         If isUp Then .MoveUp wdLine, count Else .MoveDown wdLine, count
         If atStart Then r.Start = .Start Else r.End = .End
     End With
-    
+
     Set MoveVertical_ = r
 End Function 'MoveVertical_
 '
@@ -278,14 +278,14 @@ Private Function moveHorizontal_( _
     Dim r As Range
     Set r = proczone.Duplicate
     r.Select
-    
+
     colldir = IIf(goToStartOfLine, wdCollapseStart, wdCollapseEnd)
     With doc.ActiveWindow.Selection
         .Collapse colldir
         If goToStartOfLine Then .HomeKey wdLine Else .EndKey wdLine
         If goToStartOfLine Then r.Start = .Start Else r.End = .End
     End With
-    
+
     Set moveHorizontal_ = r
 End Function 'MoveHorizontal_
 '
@@ -331,11 +331,11 @@ Private Function GetProczone_V(Optional ByRef iswholedoc As Variant, _
             Set retval = selrange.Duplicate
         End If
     End If
-    
+
     If using_sel And Not IsMissing(start_is_active) Then
         start_is_active = thedoc.ActiveWindow.Selection.StartIsActive
     End If
-    
+
     If retval.Start = retval.End Then
         ' Select the whole story the selection is in.  This is my empirical
         ' way of doing so; hopefully there's a better way.
