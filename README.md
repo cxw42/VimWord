@@ -15,15 +15,9 @@ in Word.
 ## Usage
 
  - Hit the key you mapped, then enter a normal-mode command (e.g.,
-   `diw`).  Currently only the `d` and `y` operators are supported,
-   plus `;` or `'` (not in Vim) to just go there.  For example, `;10l`
-   will move 10 characters right.
-
-## Limitations
-
- - Counts are only supported on `h` and `l`
- - Vertical motion is not yet supported
- - Numerous others! :)
+   `diw`).  Currently, the supported operators are `d` (delete), `y` (copy),
+   and `v` (select).  `c` (change) is also supported but doesn't do anything
+   other than select the text.
 
 ## License
 
