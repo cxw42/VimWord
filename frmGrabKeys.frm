@@ -17,6 +17,7 @@ Attribute VB_Exposed = False
 ' Copyright (c) 2018 Chris White.  All rights reserved.
 '   2018-04-06  chrisw  Initial version
 '   2018-04-20  chrisw  Major expansion/rewrite
+'   2018-04-24  chrisw  Change "s" to "v" (visual selection)
 
 Option Explicit
 Option Base 0
@@ -121,6 +122,8 @@ Public Enum VimOperator
     voChange        ' c
     voDelete        ' d
     voYank          ' y
+    voSelect        ' v Select <motion>.
+    
     'voSwitchCase    ' ~/g~ unimpl
     ' TODO Maybe a custom titlecase on g~?
     'voLowercase     ' gu unimpl
@@ -136,8 +139,6 @@ Public Enum VimOperator
     'voDefineFold   ' zf No plans to implement this.
     'voCallFunc     ' g@ No plans to implement this.
 
-    ' Custom (not in Vim)
-    voSelect        ' s Select <motion>.  Mostly for use as a debugging aid.
 End Enum 'VimOperator
 
 'Public Enum VimForce    ' adverb - No plans to implement this
@@ -286,7 +287,7 @@ Private Sub UserForm_Initialize()
     PC_INTRANS = 2
 
     PAT_TRANS = _
-                    "([cdys])?([1-9][0-9]*)?([ai]([wWsp])|[fFtT](.)|[hjklGwebWEB\)\(\}\{])"
+                    "([cdyv])?([1-9][0-9]*)?([ai]([wWsp])|[fFtT](.)|[hjklGwebWEB\)\(\}\{])"
     '                |        |             |    |              |
     RESM_TVERB = 0 '-^        |             |    |              |
     RESM_COUNT2 = 1 ' --------'             |    |              |
@@ -379,7 +380,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             Case "c": VOperator = voChange
             Case "d": VOperator = voDelete
             Case "y": VOperator = voYank
-            Case "s": VOperator = voSelect
+            Case "v": VOperator = voSelect      ' V, i.e., visual selection - just like in Vim.
             Case Else: Exit Function
         End Select
 

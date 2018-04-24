@@ -5,12 +5,13 @@ Attribute VB_Name = "mVimWord"
 ' Thanks to https://glts.github.io/2013/04/28/vim-normal-mode-grammar.html
 '   2018-04-06  chrisw  Initial version
 '   2018-04-20  chrisw  Split vimRunCommand off VimDoCommand
+'   2018-04-24  chrisw  Added counts to tTfF
 
 Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.1, 2018-04-20.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.2, 2018-04-24.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -94,7 +95,7 @@ Public Sub vimRunCommand( _
     Dim colldir As WdCollapseDirection
     colldir = wdCollapseEnd ' by default
 
-    Dim idx As Long
+    Dim idx As Long, result As Long
 
     Select Case motion
         Case vmLeft: proczone.MoveStart wdCharacter, -count: colldir = wdCollapseStart
@@ -119,26 +120,48 @@ Public Sub vimRunCommand( _
 
         Case vmCharForward:
             colldir = wdCollapseEnd
-            If proczone.MoveEndUntil(arg, wdForward) <> 0 Then
+            For idx = 1 To count
+                If proczone.MoveEndUntil(arg, wdForward) = 0 Then Exit For
                 proczone.MoveEnd wdCharacter, 1     ' f => to and including
-            End If
+            Next idx
 
         Case vmCharBackward:
             colldir = wdCollapseStart
-            If proczone.MoveEndUntil(arg, wdBackward) <> 0 Then
-                proczone.MoveStart wdCharacter, -1     ' F => to and including
-            End If
+            For idx = 1 To count
+                If proczone.MoveStartUntil(arg, wdBackward) = 0 Then Exit For
+                proczone.MoveStart wdCharacter, -1      ' F => to and including
+            Next idx
+            
+        Case vmTilForward:
+            colldir = wdCollapseEnd
+            result = proczone.MoveEndUntil(arg, wdForward)
+            For idx = 2 To count
+                If result = 0 Then Exit For
+                proczone.MoveEnd wdCharacter, 1
+                result = proczone.MoveEndUntil(arg, wdForward)
+            Next idx
+            
+        Case vmTilBackward:
+            colldir = wdCollapseStart
+            result = proczone.MoveStartUntil(arg, wdBackward)
+            For idx = 2 To count
+                If result = 0 Then Exit For
+                proczone.MoveStart wdCharacter, -1
+                result = proczone.MoveStartUntil(arg, wdBackward)
+            Next idx
 
-        Case vmTilForward: proczone.MoveEndUntil arg, wdForward: colldir = wdCollapseEnd
-        Case vmTilBackward: proczone.MoveStartUntil arg, wdBackward: colldir = wdCollapseStart
-
-        Case vmWordForward: proczone.MoveEnd wdWord, count: colldir = wdCollapseEnd
+        Case vmWordForward:
+            colldir = wdCollapseEnd
+            proczone.MoveEnd wdWord, count
+        
         Case vmEOWordForward:
             colldir = wdCollapseEnd
             proczone.MoveEnd wdWord, count
             proczone.MoveEndWhile CSET_WS, wdBackward
 
-        Case vmWordBackward: proczone.MoveStart wdWord, -count: colldir = wdCollapseStart
+        Case vmWordBackward:
+            colldir = wdCollapseStart
+            proczone.MoveStart wdWord, -count
 
         Case vmNonblankForward:
             colldir = wdCollapseEnd
