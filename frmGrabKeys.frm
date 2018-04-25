@@ -13,7 +13,7 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
-' frmGrabKeys: collect keypresses.
+' frmGrabKeys: collect keypresses and parse Vim commands
 ' Copyright (c) 2018 Chris White.  All rights reserved.
 '   2018-04-06  chrisw  Initial version
 '   2018-04-20  chrisw  Major expansion/rewrite
@@ -173,8 +173,10 @@ Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     vmRight             ' l
     vmStartOfParagraph  ' 0     Note: using slightly differently than in Vim.
     vmStartOfLine       ' ^
-    vmEOL               ' $
-    ' g_, g0, g^, gm, g$: Not yet implemented.
+    vmEOL               ' $     Note: can take a count, in which case it goes count-1 lines downward inclusive
+    vmEOParagraph       ' g$    Note: using slightly differently than in Vim.  Can take a count.
+    
+    ' g_, g0, g^, gm: Not yet implemented.
     vmColumn            ' |
     vmCharForward       ' f
     vmCharBackward      ' F
@@ -238,7 +240,12 @@ Public VArg As String
 ' Regexp
 Private RE_ACT As VBScript_RegExp_55.RegExp
 ' Submatch numbers
+
 'Private RESM_REGISTER As Long  ' Not yet implemented
+
+' For no-count sentences
+Private RESM_NOCOUNT As Long
+
 Private RESM_COUNT1 As Long
 
 ' For intransitive sentences
@@ -263,15 +270,14 @@ Private Sub UserForm_Initialize()
     VArg = ""
 
     Dim PC As Long: PC = 0      ' Paren counter
-    Dim PC_INTRANS As Long, PC_TRANS As Long
+    Dim PC_INTRANS As Long, PC_TRANS As Long, PC_NOCOUNT As Long
 
     Set RE_ACT = New VBScript_RegExp_55.RegExp
 
     Dim PAT_INTRANS As String   ' Pattern for an intransitive sentence, after goal and quantifier
-        ' Not yet impl
     Dim PAT_TRANS As String     ' Pattern for a transitive sentence, after goal and quantifier
-        ' TODO figure out ^0$
-
+    Dim PAT_NOCOUNT As String   ' Pattern for utterances that don't take a count
+    
     ' Note: /^"./ (register/goal) not yet implemented
 
     ' === Build up the regex ===
@@ -279,11 +285,15 @@ Private Sub UserForm_Initialize()
     ' Also, this prevents you from going insane trying to manually track
     ' submatch numbers between pieces of the regex.
 
+    PAT_NOCOUNT = "([0\^])"
+    RESM_NOCOUNT = 0
+    PC_NOCOUNT = 1
+    
     PAT_INTRANS = _
-                    "([0\^$wWeEbB]|[fFtT](.))"     ' includes motions
-    '                |                   |
-    RESM_IVERB = 0 '-^                   |
-    RESM_ITEXT = 1 ' --------------------'
+                    "([$wWeEbB]|g\$|[fFtT](.))"     ' includes motions
+    '                |                    |
+    RESM_IVERB = 0 '-^                    |
+    RESM_ITEXT = 1 ' ---------------------'
     PC_INTRANS = 2
 
     PAT_TRANS = _
@@ -296,23 +306,29 @@ Private Sub UserForm_Initialize()
     RESM_TTEXT = 4  ' ------------------------------------------'
     PC_TRANS = 5
 
-    RE_ACT.Pattern = "^([1-9][0-9]*)?(" & _
+    RE_ACT.Pattern = "^(" & _
+                            "(([1-9][0-9]*)?(" & _
                                 "(" & PAT_INTRANS & ")" & _
                                 "|" & _
                                 "(" & PAT_TRANS & ")" & _
-                            ")$"
+                            ")" & _
+                        ")" & _
+                        "|" & _
+                        "(" & PAT_NOCOUNT & ")" & _
+                    ")$"
+                        
     'RESM_REGISTER     |     not yet implemented
-    '      RESM_COUNT1-^         |
-    RESM_COUNT1 = 0     '        |
+    '            RESM_COUNT1--^  |
+    RESM_COUNT1 = 2           '  |
     ' Grouping parens numbered --' but we don't use them
 
     ' Get submatch numbers for intransitive
-    PC = 3  ' RESM_COUNT1, and two following open parens
+    PC = RESM_COUNT1 + 3    ' third open paren after COUNT1 is the first group in PAT_INTRANS
     RESM_IVERB = RESM_IVERB + PC
     RESM_ITEXT = RESM_ITEXT + PC
+    PC = PC + PC_INTRANS
 
     ' Get submatch numbers for transitive
-    PC = PC + PC_INTRANS
     PC = PC + 1     ' open paren before PAT_TRANS
     RESM_TVERB = RESM_TVERB + PC
     RESM_COUNT2 = RESM_COUNT2 + PC
@@ -321,6 +337,10 @@ Private Sub UserForm_Initialize()
     RESM_TTEXT = RESM_TTEXT + PC
     PC = PC + PC_TRANS
 
+    PC = PC + 1     ' Open paren before PAT_NOCOUNT
+    RESM_NOCOUNT = PC
+    PC = PC + PC_NOCOUNT
+    
 End Sub 'UserForm_Initialize
 '
 
@@ -331,6 +351,7 @@ End Sub
 
 Private Sub UserForm_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
     If KeyAscii = vbKeyReturn Then
+        Update
         Me.Hide
     ElseIf KeyAscii = vbKeyBack Then
         If Len(Keys) > 0 Then
@@ -349,13 +370,18 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
 ' Returns true if parse succeeded
     ProcessHit_ = False
 
-    If IsEmpty(hit.SubMatches(RESM_TVERB)) Then    ' intransitive
+    If Not IsEmpty(hit.SubMatches(RESM_NOCOUNT)) Then   ' no-count
+        Select Case Left(hit.SubMatches(RESM_NOCOUNT), 1)
+            Case "0": VOperator = voGo: VMotion = vmStartOfParagraph
+            Case "^": VOperator = voGo: VMotion = vmStartOfLine
+            Case Else: Exit Function
+        End Select
+        
+    ElseIf IsEmpty(hit.SubMatches(RESM_TVERB)) Then    ' intransitive
 
         'Debug.Print "Intransit.", Left(hit.SubMatches(RESM_IVERB), 1), hit.SubMatches(RESM_ITEXT)
 
         Select Case Left(hit.SubMatches(RESM_IVERB), 1)
-            Case "0": VOperator = voGo: VMotion = vmStartOfParagraph
-            Case "^": VOperator = voGo: VMotion = vmStartOfLine
             Case "$": VOperator = voGo: VMotion = vmEOL
             Case "w": VOperator = voGo: VMotion = vmWordForward
             Case "W": VOperator = voGo: VMotion = vmNonblankForward
@@ -369,7 +395,13 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             Case "t": VOperator = voGo: VMotion = vmTilForward: VArg = hit.SubMatches(RESM_ITEXT)
             Case "T": VOperator = voGo: VMotion = vmTilBackward: VArg = hit.SubMatches(RESM_ITEXT)
 
-            Case Else: Exit Function
+            Case Else:
+                If hit.SubMatches(RESM_IVERB) = "g$" Then
+                    VOperator = voGo
+                    VMotion = vmEOParagraph
+                Else
+                    Exit Function
+                End If
         End Select
 
     Else                                            ' transitive
