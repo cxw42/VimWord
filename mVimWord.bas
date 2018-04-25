@@ -17,54 +17,69 @@ Public Sub VimDoCommand_About()
 End Sub 'VimDoCommand_About
 '
 
-Public Sub VimDoCommand()
-' Grab and run a Vim command!
+Public Sub VimDoCommand()       ' Grab and run a Vim command!
+    VDCInternal False
+End Sub 'VimDoCommand
+
+Public Sub VimCommandLoop()     ' Grab and run a Vim command, and reopen the dialog for another command
+    VDCInternal True
+End Sub 'VimDoCommand
+
+Private Sub VDCInternal(LoopIt As Boolean)
     Dim doc As Document: Set doc = Nothing
 
     On Error Resume Next: Set doc = ActiveDocument: On Error GoTo 0
     If doc Is Nothing Then Exit Sub
-
-    Dim proczone As Range, coll As Boolean, atStart As Variant
-    atStart = Empty
-    Set proczone = GetProczone_V(doc:=doc, _
-                        iswholedoc:=coll, start_is_active:=atStart)
-
-    If coll Then    ' coll => collapsed selection, so don't use the whole doc
-                    ' (which is what GetProczone_V gave us)
-        Set proczone = doc.ActiveWindow.Selection.Range.Duplicate
+    
+    Dim stay_in_normal As Boolean: stay_in_normal = False
+    
+    Do
+        Dim proczone As Range, coll As Boolean, atStart As Variant
         atStart = Empty
-    End If
+        Set proczone = GetProczone_V(doc:=doc, _
+                            iswholedoc:=coll, start_is_active:=atStart)
+    
+        If coll Then    ' coll => collapsed selection, so don't use the whole doc
+                        ' (which is what GetProczone_V gave us)
+            Set proczone = doc.ActiveWindow.Selection.Range.Duplicate
+            atStart = Empty
+        End If
+    
+        ' Get the command
+        Dim frm As frmGrabKeys
+        Set frm = New frmGrabKeys
+        frm.Show
+        
+        Dim oper As VimOperator: oper = voUndef
+        Dim motion As VimMotion: motion = vmUndef
+        Dim operc As Long: operc = 0
+        Dim motionc As Long: motionc = 0
+        Dim cmdstr As String: cmdstr = ""
+        Dim arg As String: arg = ""
+    
+        If Not frm.WasCancelled Then
+            cmdstr = frm.Keys
+            oper = frm.VOperator
+            motion = frm.VMotion
+            operc = frm.VOperatorCount
+            motionc = frm.VMotionCount
+            arg = frm.VArg
+        End If
+    
+        Unload frm
+        Set frm = Nothing
+        If oper <> voUndef And motion <> vmUndef Then
+            vimRunCommand doc, proczone, coll, atStart, oper, motion, operc, motionc, cmdstr, arg
+            Application.ScreenRefresh
+        End If
+        
+        ' d and y leave you in normal mode; s and c do not.
+        ' TODO expand this list in the future.
+        stay_in_normal = (oper = voDelete) Or (oper = voYank)
+    Loop While LoopIt And stay_in_normal
+End Sub 'VDCInternal
 
-    ' Get the command
-    Dim frm As frmGrabKeys
-    Set frm = New frmGrabKeys
-    frm.Show
-    Dim oper As VimOperator
-    Dim motion As VimMotion
-    Dim operc As Long
-    Dim motionc As Long
-    Dim cmdstr As String
-    Dim arg As String
-
-    If Not frm.WasCancelled Then
-        cmdstr = frm.Keys
-        oper = frm.VOperator
-        motion = frm.VMotion
-        operc = frm.VOperatorCount
-        motionc = frm.VMotionCount
-        arg = frm.VArg
-    End If
-
-    Unload frm
-    Set frm = Nothing
-    If oper = voUndef Or motion = vmUndef Then
-        Exit Sub
-    End If
-
-    vimRunCommand doc, proczone, coll, atStart, oper, motion, operc, motionc, cmdstr, arg
-End Sub 'VimDoCommand
-
-Public Sub vimRunCommand( _
+Private Sub vimRunCommand( _
     doc As Document, _
     proczone As Range, _
     coll As Boolean, _
@@ -113,8 +128,19 @@ Public Sub vimRunCommand( _
         Case vmStartOfLine, vmEOL:
             Set proczone = moveHorizontal_( _
                 motion = vmStartOfLine, doc, proczone, colldir)
+            
+            If motion = vmEOL And count > 1 Then
+                proczone.MoveEnd wdParagraph, count - 1
+            End If
 
         Case vmStartOfParagraph: proczone.Start = proczone.Paragraphs(1).Range.Start: colldir = wdCollapseStart
+        
+        Case vmEOParagraph:
+            proczone.Start = proczone.Paragraphs(1).Range.Start
+            colldir = wdCollapseEnd
+            If count > 1 Then
+                proczone.MoveEnd wdParagraph, count - 1
+            End If
 
         'TODO Case vmLine
 
