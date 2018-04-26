@@ -1,0 +1,16 @@
+#
+#' === Build up the regex ===
+#' We do this a piece at a time to make it easier to change later.
+#' Also, this prevents you from going insane trying to manually track
+#' submatch numbers between pieces of the regex.
+#
+
+piece3  (?<=piece1)text here to make it long(?<=piece2)(?:foo)?(bar)?
+        (?<lastone>9+)
+piece2  ((?<upperalpha>[A-Z])(?<p2>something))\\a+
+        "[0-9]"
+#baaad           \
+piece1  [a-z](?<p1>thing)  (?#comment!)   
+
+__END__
+# vi: set ts=4 sts=4 sw=4 et ai ff=unix ft=sh: #
