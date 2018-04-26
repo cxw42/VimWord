@@ -18,6 +18,7 @@ Attribute VB_Exposed = False
 '   2018-04-06  chrisw  Initial version
 '   2018-04-20  chrisw  Major expansion/rewrite
 '   2018-04-24  chrisw  Change "s" to "v" (visual selection)
+'   2018-04-26  chrisw  Changed regex from hand-generated to re2vba.pl
 
 Option Explicit
 Option Base 0
@@ -104,7 +105,7 @@ Public Enum VimCommand      ' Intransitive commands
 
     ' TODO z., zt, zb, z+, z-
 
-    ' TODO /, ?
+    ' TODO /, ?, *, #
     'vcSearchNext    ' n
     'vcSearchPrev    ' N
 
@@ -123,7 +124,7 @@ Public Enum VimOperator
     voDelete        ' d
     voYank          ' y
     voSelect        ' v Select <motion>.
-    
+
     'voSwitchCase    ' ~/g~ unimpl
     ' TODO Maybe a custom titlecase on g~?
     'voLowercase     ' gu unimpl
@@ -150,6 +151,16 @@ End Enum 'VimOperator
 Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     vmUndef
 
+    ' Marks - TODO the rest of :help mark-motions
+    'vmMark             ' '
+    'vmMarkExact        ' `
+
+    ' Searches
+    'vmSearchDown       ' /
+    'vmSearchUp         ' ?
+    'vmSearchNext       ' n
+    'vmSearchPrev       ' N
+
     ' Objects from :help visual-operators
     vmAWord             ' aw
     vmIWord             ' iw
@@ -175,7 +186,7 @@ Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     vmStartOfLine       ' ^
     vmEOL               ' $     Note: can take a count, in which case it goes count-1 lines downward inclusive
     vmEOParagraph       ' g$    Note: using slightly differently than in Vim.  Can take a count.
-    
+
     ' g_, g0, g^, gm: Not yet implemented.
     vmColumn            ' |
     vmCharForward       ' f
@@ -214,6 +225,18 @@ Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     vmParaBackward      ' {
     vmSectionForward    ' ]] or ][ (NOTE: not distinguishing the two)
     vmSectionBackward   ' [[ or [] (NOTE: not distinguishing the two)
+
+    ' :help various-motions
+    'vmPercent          ' %
+    'vmPrevParen        ' [(
+    'vmPrevBrace        ' [{
+    'vmNextParen        ' ])
+    'vmNextBrace        ' ]}
+    ' ]m ]M [m [M next/prev start/END of method
+    ' [# prev #if/#else
+    ' ]# next #else/#endif
+    ' [* [/ ]( ]/ C comment jumps
+    ' H, M, L - move within currently visible text.  Count is line number for H and L.
 
     ' Custom (not in Vim) (TODO)
     'vmRevisionForward
@@ -269,78 +292,31 @@ Private Sub UserForm_Initialize()
     VMotionCount = 1
     VArg = ""
 
-    Dim PC As Long: PC = 0      ' Paren counter
-    Dim PC_INTRANS As Long, PC_TRANS As Long, PC_NOCOUNT As Long
 
-    Set RE_ACT = New VBScript_RegExp_55.RegExp
-
-    Dim PAT_INTRANS As String   ' Pattern for an intransitive sentence, after goal and quantifier
-    Dim PAT_TRANS As String     ' Pattern for a transitive sentence, after goal and quantifier
-    Dim PAT_NOCOUNT As String   ' Pattern for utterances that don't take a count
-    
     ' Note: /^"./ (register/goal) not yet implemented
 
     ' === Build up the regex ===
-    ' We do this a piece at a time to make it easier to change later.
-    ' Also, this prevents you from going insane trying to manually track
-    ' submatch numbers between pieces of the regex.
+    ' The following code is the output of re2vba.pl vim-regex.txt.
+    ' DO NOT MODIFY HERE.  If you need to changeit, change the vim-regex.txt
+    ' and re-run re2vba.pl.
 
-    PAT_NOCOUNT = "([0\^])"
-    RESM_NOCOUNT = 0
-    PC_NOCOUNT = 1
-    
-    PAT_INTRANS = _
-                    "([$wWeEbB]|g\$|[fFtT](.))"     ' includes motions
-    '                |                    |
-    RESM_IVERB = 0 '-^                    |
-    RESM_ITEXT = 1 ' ---------------------'
-    PC_INTRANS = 2
+    Set RE_ACT = New VBScript_RegExp_55.RegExp
+    RE_ACT.IgnoreCase = False
+    RE_ACT.Pattern = _
+        "^((([1-9][0-9]*)?((([$wWeEbB]|g\$|[fFtT](.)))|(([cdyv])?([1-" & _
+        "9][0-9]*)?([ai]([wWsp])|[fFtT](.)|[hjklGwebWEB\x28\x29\x7b\x" & _
+        "7d]))))|(([0\^])))$" & _
+        ""
+    RESM_COUNT1 = 2
+    RESM_IVERB = 5
+    RESM_ITEXT = 6
+    RESM_TVERB = 8
+    RESM_COUNT2 = 9
+    RESM_TOBJ = 10
+    RESM_OBJTYPE = 11
+    RESM_TTEXT = 12
+    RESM_NOCOUNT = 14
 
-    PAT_TRANS = _
-                    "([cdyv])?([1-9][0-9]*)?([ai]([wWsp])|[fFtT](.)|[hjklGwebWEB\)\(\}\{])"
-    '                |        |             |    |              |
-    RESM_TVERB = 0 '-^        |             |    |              |
-    RESM_COUNT2 = 1 ' --------'             |    |              |
-    RESM_TOBJ = 2   ' ----------------------'    |              |
-    RESM_OBJTYPE = 3    ' -----------------------'              |
-    RESM_TTEXT = 4  ' ------------------------------------------'
-    PC_TRANS = 5
-
-    RE_ACT.Pattern = "^(" & _
-                            "(([1-9][0-9]*)?(" & _
-                                "(" & PAT_INTRANS & ")" & _
-                                "|" & _
-                                "(" & PAT_TRANS & ")" & _
-                            ")" & _
-                        ")" & _
-                        "|" & _
-                        "(" & PAT_NOCOUNT & ")" & _
-                    ")$"
-                        
-    'RESM_REGISTER     |     not yet implemented
-    '            RESM_COUNT1--^  |
-    RESM_COUNT1 = 2           '  |
-    ' Grouping parens numbered --' but we don't use them
-
-    ' Get submatch numbers for intransitive
-    PC = RESM_COUNT1 + 3    ' third open paren after COUNT1 is the first group in PAT_INTRANS
-    RESM_IVERB = RESM_IVERB + PC
-    RESM_ITEXT = RESM_ITEXT + PC
-    PC = PC + PC_INTRANS
-
-    ' Get submatch numbers for transitive
-    PC = PC + 1     ' open paren before PAT_TRANS
-    RESM_TVERB = RESM_TVERB + PC
-    RESM_COUNT2 = RESM_COUNT2 + PC
-    RESM_TOBJ = RESM_TOBJ + PC
-    RESM_OBJTYPE = RESM_OBJTYPE + PC
-    RESM_TTEXT = RESM_TTEXT + PC
-    PC = PC + PC_TRANS
-
-    PC = PC + 1     ' Open paren before PAT_NOCOUNT
-    RESM_NOCOUNT = PC
-    PC = PC + PC_NOCOUNT
-    
 End Sub 'UserForm_Initialize
 '
 
@@ -376,7 +352,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             Case "^": VOperator = voGo: VMotion = vmStartOfLine
             Case Else: Exit Function
         End Select
-        
+
     ElseIf IsEmpty(hit.SubMatches(RESM_TVERB)) Then    ' intransitive
 
         'Debug.Print "Intransit.", Left(hit.SubMatches(RESM_IVERB), 1), hit.SubMatches(RESM_ITEXT)

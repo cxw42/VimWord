@@ -11,7 +11,7 @@ Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.2, 2018-04-24.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.3, 2018-04-26.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About

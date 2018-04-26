@@ -1,0 +1,39 @@
+# vim normal-mode regex, in re2vba.pl input format.
+# Copyright (c) Chris White 2018.
+# CC-BY-NC-SA 4.0, or any later version, at your option.
+
+# Main pattern
+main        ^( (?# Note: registers not yet implemented)
+                ((?<count1>[1-9][0-9]*)?
+                    (?:
+                        ((?<=intrans))
+                        |
+                        ((?<=trans))
+                    )
+                )
+                |
+                ((?<=nocount))
+            )$
+
+# Commands that don't take a count
+nocount     (?<nocount>[0\^])
+
+# Intransitive, including motions
+intrans     (?<iverb>
+                [$wWeEbB]|
+                g\$|
+                [fFtT](?<itext>.)
+            )
+                # IVERB: what to do
+                        # ITEXT: character to jump to
+
+# Transitive: verb, count, object, object type, text
+trans       (?<tverb>[cdyv])?               (?# TVERB: what to do)
+            (?<count2>[1-9][0-9]*)?         (?# Count after the operator)
+            (?<tobj>                        (?# What to work on)
+                [ai](?<objtype>[wWsp])|     (?# Text objects)
+                [fFtT](?<ttext>.)|          (?# Motions with a text argument)
+                [hjklGwebWEB\x28\x29\x7b\x7d]  (?# Motions with no argument)
+            )       (?# 28/29 are parens; 7b/7d are braces)
+
+# vi: set ts=4 sts=4 sw=4 et ai ff=unix ft=sh: #
