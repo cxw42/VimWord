@@ -7,8 +7,15 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Carp;
+use Getopt::Long;
+use Pod::Usage;
 
-exit Main(@ARGV);
+use constant { true => !!1, false => !!0 };
+use constant EXIT_OK        => 0;   # success
+use constant EXIT_PROC_ERR  => 1;   # error during processing
+use constant EXIT_PARAM_ERR => 2;   # couldn't understand the command line
+
+exit Main();
 
 # Test and save a piece
 sub stash_piece
@@ -31,6 +38,20 @@ sub stash_piece
 
 sub Main
 {
+    # Args
+    my %opts = (dim=>true, quiet=>false);
+    GetOptions(\%opts,
+        'usage|?', 'help|h', 'man',     # options we handle here
+        "dim!",   # whether to print declarations
+        "quiet|q",
+    )
+    or pod2usage(-verbose => 0, -exitval => EXIT_PARAM_ERR);    # unknown opt
+
+    # Help, if requested
+    pod2usage(-verbose => 0, -exitval => EXIT_PROC_ERR) if $opts{usage};
+    pod2usage(-verbose => 1, -exitval => EXIT_PROC_ERR) if $opts{help};
+    pod2usage(-verbose => 2, -exitval => EXIT_PROC_ERR) if $opts{man};
+
     # Main input loop
     my %pieces;
     my $piecename="";
@@ -45,7 +66,7 @@ sub Main
         s{\(\?#[^\)]*\)}{}g;        # remove comment groups
         s{\s+$}{};                  # remove trailing whitespace
         my @fields = split(/\s+/, $_, 2);
-        say STDERR "${.}: ", join(':',@fields,'');
+        say STDERR "${.}: ", join(':',@fields,'') unless $opts{quiet};
 
         if($fields[0] && $fields[1]) {    # a new piece
             if($piecename && $piecetext) {  # Finish the last piece
@@ -65,7 +86,7 @@ sub Main
         $mainpiece = $piecename unless $mainpiece;
     }
 
-    say STDERR "Found pieces: ", Dumper(\%pieces);
+    say STDERR "Found pieces: ", Dumper(\%pieces) unless $opts{quiet};
 
     die "No main piece found" unless $mainpiece && $pieces{$mainpiece};
 
@@ -75,14 +96,15 @@ sub Main
         # nop
     }
 
-    say STDERR "Full regex is -$full_regex-";
+    say STDERR "Full regex is -$full_regex-" unless $opts{quiet};
 
     # Disallow \\( so I don't have to count backslashes to see if it's
     # even or odd.
     if($full_regex =~ m{\\\\\(}) {
         # Mark the error location
+        say STDERR   "Full regex is -$full_regex-" if $opts{quiet};
         my $spacer = '               ' . (' ' x $-[0]);
-                    # Full regex is -
+
         say STDERR $spacer, '^';
         die 'Unfortunately, I can\'t handle `\\\\(` (you can insert `.{0,0}`' .
             ' as a spacer if necessary)';
@@ -126,8 +148,7 @@ sub Main
     $full_regex =~ s{"}{""}g;
 
     # Print the definitions
-    say ' ' x 4, "Dim RE_PAT As String";
-    for(my $idx=0; $idx < $groupidx; ++$idx) {
+    for(my $idx=0; $opts{dim} && ($idx < $groupidx); ++$idx) {
         next unless exists $names{$idx};
         my $name = $names{$idx};
         $name = uc $name;
@@ -135,6 +156,7 @@ sub Main
         $names{$idx} = $name;
         say ' ' x 4, "Dim RESM_$name As Long";
     }
+    say ' ' x 4, "Dim RE_PAT As String" if $opts{dim};
 
     # Print the regex, with lines broken
     say "\n", ' ' x 4, "RE_PAT = _";
@@ -161,7 +183,21 @@ re2vba.pl - Convert a Perl regex to a VBA implementation somewhat like that rege
 
 =head1 USAGE
 
-    re2vba.pl [input files (stdin if none is given)]
+    re2vba.pl [-options] [input files (stdin if none is given)]
+
+=head1 OPTIONS
+
+=over
+
+=item --nodim
+
+If given on the command line, do not print the C<Dim> statements.
+
+=item -q, --quiet
+
+Do not print the diagnostic messages while running
+
+=back
 
 =head1 INPUT FORMAT
 
@@ -194,11 +230,12 @@ Each piece can be referenced only once.
 
 =head1 OUTPUT FORMAT
 
-The tool outputs diagnostics on STDERR and VBA source on STDOUT.
-The VBA source defines C<RE_PAT>, which is a string of the regex pattern.
-It also defines C<RESM_*> variables as C<Long>.  Those are the submatch numbers
-of the various named groups in the input.  Each named group is uppercased,
-and all non-letter/non-digit characters are replaced with underscores.
+The tool outputs diagnostics on STDERR (unless --quite) and VBA source on
+STDOUT.  The VBA source defines C<RE_PAT>, which is a string of the regex
+pattern.  It also defines C<RESM_*> variables as C<Long>.  Those are the
+submatch numbers of the various named groups in the input.  Each named group is
+uppercased, and all non-letter/non-digit characters are replaced with
+underscores.
 
 =head2 Example output
 
