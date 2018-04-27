@@ -77,6 +77,17 @@ sub Main
 
     say STDERR "Full regex is -$full_regex-";
 
+    # Disallow \\( so I don't have to count backslashes to see if it's
+    # even or odd.
+    if($full_regex =~ m{\\\\\(}) {
+        # Mark the error location
+        my $spacer = '               ' . (' ' x $-[0]);
+                    # Full regex is -
+        say STDERR $spacer, '^';
+        die 'Unfortunately, I can\'t handle `\\\\(` (you can insert `.{0,0}`' .
+            ' as a spacer if necessary)';
+    }
+
     # Find named- or non-capturing groups in the regexes.
     my %names;
     my $groupidx=0;

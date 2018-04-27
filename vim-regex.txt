@@ -3,20 +3,21 @@
 # CC-BY-NC-SA 4.0, or any later version, at your option.
 
 # Main pattern
-main        ^( (?# Note: registers not yet implemented)
-                ((?<count1>[1-9][0-9]*)?
+main        ^(  (?# Note: registers not yet implemented)
+                (?<=nocount-piece)
+                |
+                (
+                    (?<count1>[1-9][0-9]*)?
                     (?:
-                        ((?<=intrans))
+                        (?<=intrans)
                         |
-                        ((?<=trans))
+                        (?<=trans)
                     )
                 )
-                |
-                ((?<=nocount))
             )$
 
 # Commands that don't take a count
-nocount     (?<nocount>[0\^])
+nocount-piece (?<nocount>[0\^])
 
 # Intransitive, including motions
 intrans     (?<iverb>
