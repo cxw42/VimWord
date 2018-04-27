@@ -1,6 +1,8 @@
 # vim normal-mode regex, in re2vba.pl input format.
 # Copyright (c) Chris White 2018.
 # CC-BY-NC-SA 4.0, or any later version, at your option.
+# Useful command line:
+# ./re2vba.pl --nodim vim-regex.txt |tee >(putclip)
 
 # Main pattern
 main        ^(  (?# Note: registers not yet implemented)
@@ -21,9 +23,19 @@ nocount-piece (?<nocount>[0\^])
 
 # Intransitive, including motions
 intrans     (?<iverb>
+                                        (?# motions)
                 [$wWeEbB]|
                 g\$|
-                [fFtT](?<itext>.)
+                [fFtT](?<itext>.)|
+                                        (?# searches)
+                \*|
+                [#]|    (?# in brackets so it does not introduce a comment)
+                g\*|
+                g#|
+                gW\*|
+                gW#|
+                gWg\*|
+                gWg#
             )
                 # IVERB: what to do
                         # ITEXT: character to jump to

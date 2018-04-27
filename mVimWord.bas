@@ -11,7 +11,7 @@ Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.4, 2018-04-27.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.5, 2018-04-27.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -51,6 +51,7 @@ Private Sub VDCInternal(LoopIt As Boolean)
         frm.Show
         
         Dim oper As VimOperator: oper = voUndef
+        Dim cmd As VimCommand: cmd = vcundef
         Dim motion As VimMotion: motion = vmUndef
         Dim operc As Long: operc = 0
         Dim motionc As Long: motionc = 0
@@ -60,6 +61,7 @@ Private Sub VDCInternal(LoopIt As Boolean)
         If Not frm.WasCancelled Then
             cmdstr = frm.Keys
             oper = frm.VOperator
+            cmd = frm.VCommand
             motion = frm.VMotion
             operc = frm.VOperatorCount
             motionc = frm.VMotionCount
@@ -68,8 +70,8 @@ Private Sub VDCInternal(LoopIt As Boolean)
     
         Unload frm
         Set frm = Nothing
-        If oper <> voUndef And motion <> vmUndef Then
-            vimRunCommand doc, proczone, coll, atStart, oper, motion, operc, motionc, cmdstr, arg
+        If (cmd <> vcundef) Or (oper <> voUndef And motion <> vmUndef) Then
+            vimRunCommand doc, proczone, coll, atStart, oper, cmd, motion, operc, motionc, cmdstr, arg
             Application.ScreenRefresh
         End If
         
@@ -85,6 +87,7 @@ Private Sub vimRunCommand( _
     coll As Boolean, _
     atStart As Variant, _
     oper As VimOperator, _
+    cmd As VimCommand, _
     motion As VimMotion, _
     operc As Long, _
     motionc As Long, _
@@ -95,9 +98,14 @@ Private Sub vimRunCommand( _
     Dim CSET_WS As String: CSET_WS = " " & Chr(9) & Chr(10) & Chr(12) & Chr(13)
         ' NOT comment markers since I've been having problems with those lately
 
-    Dim count As Long
-    count = operc * motionc  ' per motion.txt#operator
-
+    ' Sanity check: we can have an operator or a command, but not both.
+    If (oper <> voUndef And cmd <> vcundef) Or _
+            (oper = voUndef And cmd = vcundef) Then
+        MsgBox "Error (contact Chris White): operator " & CStr(oper) & _
+                " with command " & CStr(cmd), vbExclamation, TITLE
+        Exit Sub
+    End If
+    
     Dim undos As UndoRecord
     Set undos = Application.UndoRecord
 
@@ -106,6 +114,9 @@ Private Sub vimRunCommand( _
     On Error GoTo VRC_Err
     undos.StartCustomRecord TITLE & ": " & cmdstr
     Application.ScreenUpdating = False
+
+    Dim count As Long
+    count = operc * motionc  ' per motion.txt#operator
 
     Dim colldir As WdCollapseDirection
     colldir = wdCollapseEnd ' by default
@@ -272,25 +283,59 @@ Private Sub vimRunCommand( _
             proczone.MoveEndWhile CSET_WS, wdBackward
             coll = False
 
-        Case Else: GoTo VRC_Finally     ' Unimplemented is not an error
+        Case Else:
+            If cmd = vcundef Then GoTo VRC_Finally     ' Unimplemented is not an error
     End Select ' motion
 
-    Select Case oper
-        Case voDelete:
-            If proczone.Start <> proczone.End Then proczone.Delete
-            GoTo VRC_Finally
-        Case voYank:
-            If proczone.Start <> proczone.End Then proczone.Copy
-            GoTo VRC_Finally
-        ' voGo, voSelect handled below
-    End Select 'operator
+    ' Process it.  We have either an operator or a command.
+    
+    If oper <> vcundef Then     ' Operators
+        Select Case oper
+            Case voDelete:
+                If proczone.Start <> proczone.End Then proczone.Delete
+                GoTo VRC_Finally
+            Case voYank:
+                If proczone.Start <> proczone.End Then proczone.Copy
+                GoTo VRC_Finally
+            ' voGo, voSelect handled below
+        End Select 'operator
+    
+        If (oper = voGo) And coll Then
+            proczone.Collapse colldir
+        End If
+    
+        proczone.Select     ' Handles voSelect
+        
+    Else                        ' Commands
+    
+        Dim issearch As Boolean: issearch = False
+        Dim searchforward As Boolean
+        Dim searchwholeword As Boolean
+        
+        Select Case cmd
+            Case vcSearchWholeWordForward, vcSearchWholeNonblankForward:
+                issearch = True: searchforward = True: searchwholeword = True
+            Case vcSearchWholeWordBackward, vcSearchWholeNonblankBackward:
+                issearch = True: searchforward = False: searchwholeword = True
+                
+            Case vcSearchWordForward, vcSearchNonblankForward:
+                issearch = True: searchforward = True: searchwholeword = False
+            Case vcSearchWordBackward, vcSearchNonblankBackward:
+                issearch = True: searchforward = False: searchwholeword = False
 
-    If (oper = voGo) And coll Then
-        proczone.Collapse colldir
+            Case Else: GoTo VRC_Finally
+        End Select
+        
+        If issearch Then
+            proczone.Select
+            With doc.ActiveWindow.Selection
+                .Collapse IIf(searchforward, wdCollapseEnd, wdCollapseStart)
+                .Find.Execute proczone.Text, MatchWholeWord:=searchwholeword, Forward:=searchforward, Wrap:=wdFindContinue
+            End With
+        End If
+        
     End If
-
-    proczone.Select     ' Handles voSelect
-
+    
 VRC_Finally:
     On Error Resume Next    ' or else errors in the cleanup code cause infinite loops
     Application.ScreenUpdating = True

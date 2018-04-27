@@ -20,6 +20,8 @@ Attribute VB_Exposed = False
 '   2018-04-24  chrisw  Change "s" to "v" (visual selection)
 '   2018-04-26  chrisw  Changed regex from hand-generated to re2vba.pl
 
+' NOTE: the consolidated reference is in :help normal-index
+
 Option Explicit
 Option Base 0
 
@@ -79,7 +81,7 @@ End Enum 'VimRegister
 Public Enum VimCommand      ' Intransitive commands
 ' thanks to https://www.fprintf.net/vimCheatSheet.html and :help change.txt
 
-    vcUndef
+    vcundef
 
     ' Note: intransitive motions (e.g., 0, ^, $) are handled with a fake operator voGo.
     'vcAppend       ' a
@@ -105,9 +107,22 @@ Public Enum VimCommand      ' Intransitive commands
 
     ' TODO z., zt, zb, z+, z-
 
-    ' TODO /, ?, *, #
+    ' TODO /, ?, *, #, g*, g# (search based on Word's idea of a word)
     'vcSearchNext    ' n
     'vcSearchPrev    ' N
+    vcSearchWholeWordForward    ' *
+    vcSearchWholeWordBackward   ' #
+    vcSearchWordForward         ' g*
+    vcSearchWordBackward        ' g#
+
+
+    ' TODO gW*, gW#, gWg*, gWg# to search based on a WORD (not in Vim).
+    ' In Vim, gW is unused.  This is by analogy with W.
+    'vcSearchNonblankForward    ' z*
+    vcSearchWholeNonblankForward    ' gW*
+    vcSearchWholeNonblankBackward   ' gW#
+    vcSearchNonblankForward         ' gWg*
+    vcSearchNonblankBackward        ' gWg#
 
     ' TODO J, gJ
 End Enum 'VimCommand
@@ -255,6 +270,7 @@ End Enum 'VimMotion
 Public WasCancelled As Boolean
 Public Keys As String
 Public VOperator As VimOperator
+Public VCommand As VimCommand
 Public VMotion As VimMotion
 Public VOperatorCount As Long
 Public VMotionCount As Long
@@ -286,26 +302,24 @@ Private RESM_TTEXT As Long      ' Text for motions such as t and f
 Private Sub UserForm_Initialize()
     WasCancelled = False
     Keys = ""
-    VOperator = vcUndef
+    VOperator = voUndef
+    VCommand = vcundef
     VMotion = vmUndef
     VOperatorCount = 1
     VMotionCount = 1
     VArg = ""
 
-
-    ' Note: /^"./ (register/goal) not yet implemented
+    Dim RE_PAT As String
 
     ' === Build up the regex ===
-    ' The following code is from the output of `re2vba.pl vim-regex.txt`.
+    ' The following code is from the output of `re2vba.pl --nodim vim-regex.txt`.
     ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
 
-    Set RE_ACT = New VBScript_RegExp_55.RegExp
-    RE_ACT.IgnoreCase = False
-    RE_ACT.Pattern = _
-        "^(([0\^])|(([1-9][0-9]*)?(([$wWeEbB]|g\$|[fFtT](.))|([cdyv])" & _
-        "?([1-9][0-9]*)?([ai]([wWsp])|[fFtT](.)|[hjklGwebWEB\x28\x29\" & _
-        "x7b\x7d]))))$" & _
+    RE_PAT = _
+        "^(([0\^])|(([1-9][0-9]*)?(([$wWeEbB]|g\$|[fFtT](.)|\*|[#]|g\" & _
+        "*|g#|gW\*|gW#|gWg\*|gWg#)|([cdyv])?([1-9][0-9]*)?([ai]([wWsp" & _
+        "])|[fFtT](.)|[hjklGwebWEB\x28\x29\x7b\x7d]))))$" & _
         ""
     RESM_NOCOUNT = 1
     RESM_COUNT1 = 3
@@ -316,6 +330,12 @@ Private Sub UserForm_Initialize()
     RESM_TOBJ = 9
     RESM_OBJTYPE = 10
     RESM_TTEXT = 11
+
+    ' === End of generated code ===
+
+    Set RE_ACT = New VBScript_RegExp_55.RegExp
+    RE_ACT.IgnoreCase = False
+    RE_ACT.Pattern = RE_PAT
 
 End Sub 'UserForm_Initialize
 '
@@ -371,13 +391,24 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             Case "t": VOperator = voGo: VMotion = vmTilForward: VArg = hit.SubMatches(RESM_ITEXT)
             Case "T": VOperator = voGo: VMotion = vmTilBackward: VArg = hit.SubMatches(RESM_ITEXT)
 
-            Case Else:
-                If hit.SubMatches(RESM_IVERB) = "g$" Then
-                    VOperator = voGo
-                    VMotion = vmEOParagraph
-                Else
-                    Exit Function
-                End If
+            Case Else:  ' Check the whole iverb, since the first character isn't enough
+                Select Case hit.SubMatches(RESM_IVERB)
+                    ' Motions
+                    Case "g$": VOperator = voGo: VMotion = vmEOParagraph
+                    
+                    ' Searches
+                    Case "*": VCommand = vcSearchWholeWordForward: VMotion = vmIWord
+                    Case "#": VCommand = vcSearchWholeWordBackward: VMotion = vmIWord
+                    Case "g*": VCommand = vcSearchWordForward: VMotion = vmIWord
+                    Case "g#": VCommand = vcSearchWordBackward: VMotion = vmIWord
+                    
+                    Case "gW*": VCommand = vcSearchWholeNonblankForward: VMotion = vmINonblank
+                    Case "gW#": VCommand = vcSearchWholeNonblankBackward: VMotion = vmINonblank
+                    Case "gWg*": VCommand = vcSearchNonblankForward: VMotion = vmINonblank
+                    Case "gWg#": VCommand = vcSearchNonblankBackward: VMotion = vmINonblank
+                    
+                    Case Else: Exit Function
+                End Select
         End Select
 
     Else                                            ' transitive
