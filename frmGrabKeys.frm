@@ -101,7 +101,7 @@ Public Enum VimCommand      ' Intransitive commands
 
     'vcUndo         ' u
     'vcRedo         ' Ctl+R
-    'vcUndoLine     ' U
+    'vcUndoLine     ' U     No plans to implement this - I don't think Word gives me the necessary control.
 
     ' TODO z., zt, zb, z+, z-
 
@@ -296,26 +296,26 @@ Private Sub UserForm_Initialize()
     ' Note: /^"./ (register/goal) not yet implemented
 
     ' === Build up the regex ===
-    ' The following code is the output of re2vba.pl vim-regex.txt.
-    ' DO NOT MODIFY HERE.  If you need to changeit, change the vim-regex.txt
+    ' The following code is from the output of `re2vba.pl vim-regex.txt`.
+    ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
 
     Set RE_ACT = New VBScript_RegExp_55.RegExp
     RE_ACT.IgnoreCase = False
     RE_ACT.Pattern = _
-        "^((([1-9][0-9]*)?((([$wWeEbB]|g\$|[fFtT](.)))|(([cdyv])?([1-" & _
-        "9][0-9]*)?([ai]([wWsp])|[fFtT](.)|[hjklGwebWEB\x28\x29\x7b\x" & _
-        "7d]))))|(([0\^])))$" & _
+        "^(([0\^])|(([1-9][0-9]*)?(([$wWeEbB]|g\$|[fFtT](.))|([cdyv])" & _
+        "?([1-9][0-9]*)?([ai]([wWsp])|[fFtT](.)|[hjklGwebWEB\x28\x29\" & _
+        "x7b\x7d]))))$" & _
         ""
-    RESM_COUNT1 = 2
+    RESM_NOCOUNT = 1
+    RESM_COUNT1 = 3
     RESM_IVERB = 5
     RESM_ITEXT = 6
-    RESM_TVERB = 8
-    RESM_COUNT2 = 9
-    RESM_TOBJ = 10
-    RESM_OBJTYPE = 11
-    RESM_TTEXT = 12
-    RESM_NOCOUNT = 14
+    RESM_TVERB = 7
+    RESM_COUNT2 = 8
+    RESM_TOBJ = 9
+    RESM_OBJTYPE = 10
+    RESM_TTEXT = 11
 
 End Sub 'UserForm_Initialize
 '

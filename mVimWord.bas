@@ -11,7 +11,7 @@ Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.3, 2018-04-26.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.4, 2018-04-27.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -145,6 +145,7 @@ Private Sub vimRunCommand( _
         'TODO Case vmLine
 
         Case vmCharForward:
+            arg = ExpandCSet_(arg)
             colldir = wdCollapseEnd
             For idx = 1 To count
                 If proczone.MoveEndUntil(arg, wdForward) = 0 Then Exit For
@@ -152,6 +153,7 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmCharBackward:
+            arg = ExpandCSet_(arg)
             colldir = wdCollapseStart
             For idx = 1 To count
                 If proczone.MoveStartUntil(arg, wdBackward) = 0 Then Exit For
@@ -159,6 +161,7 @@ Private Sub vimRunCommand( _
             Next idx
             
         Case vmTilForward:
+            arg = ExpandCSet_(arg)
             colldir = wdCollapseEnd
             result = proczone.MoveEndUntil(arg, wdForward)
             For idx = 2 To count
@@ -168,6 +171,7 @@ Private Sub vimRunCommand( _
             Next idx
             
         Case vmTilBackward:
+            arg = ExpandCSet_(arg)
             colldir = wdCollapseStart
             result = proczone.MoveStartUntil(arg, wdBackward)
             For idx = 2 To count
@@ -402,3 +406,29 @@ Private Function GetProczone_V(Optional ByRef iswholedoc As Variant, _
 End Function 'GetProczone_V
 '
 
+Private Function ExpandCSet_(arg As String) As String
+' Expand characters to include Unicode equivalents
+    ExpandCSet_ = arg
+    Select Case arg
+        Case " ": ExpandCSet_ = " " & ChrW(W_NBSP) & ChrW(U_TAB)
+        
+        Case "'": ExpandCSet_ = "'" & ChrW(U_CURLY_APOS) & ChrW(U_CURLY_BACKQUOTE)
+        
+        Case """": ExpandCSet_ = """" & _
+                    ChrW(U_CURLY_OPENDQUOTE) & _
+                    ChrW(U_CURLY_CLOSEDQUOTE)
+
+        Case "-": ExpandCSet_ = "-" & _
+                    ChrW(U_OPT_HYPHEN) & _
+                    ChrW(U_REAL_HYPHEN) & _
+                    ChrW(U_NONBREAK_HYPHEN) & _
+                    ChrW(U_FIGURE_DASH) & _
+                    ChrW(U_EN_DASH) & _
+                    ChrW(U_EM_DASH) & _
+                    ChrW(U_WAVE_DASH) & _
+                    ChrW(U_FULLWIDTH_TILDE) & _
+                    ChrW(W_NBHYPHEN) & _
+                    ChrW(W_OPTHYPHEN)
+    End Select
+End Function 'ExpandCSet_
+'
