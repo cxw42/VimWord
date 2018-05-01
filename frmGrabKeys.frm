@@ -81,7 +81,7 @@ End Enum 'VimRegister
 Public Enum VimCommand      ' Intransitive commands
 ' thanks to https://www.fprintf.net/vimCheatSheet.html and :help change.txt
 
-    vcundef
+    vcUndef
 
     ' Note: intransitive motions (e.g., 0, ^, $) are handled with a fake operator voGo.
     'vcAppend       ' a
@@ -96,10 +96,14 @@ Public Enum VimCommand      ' Intransitive commands
     'vcDelBefore    ' X
     ' TODO D, C, s, S
 
-    ' TODO implement these once I implement registers
-    'vcPutAfter     ' p
-    'vcPutBefore    ' P
+    ' TODO implement registers
+    vcPutAfter     ' p
+    vcPutBefore    ' P
+    vcPutAfterG     'gp
+    vcPutBeforeG    'gP
+    
     ' TODO gp, gP, ]p, [p, ]P, [P
+    ' NOTE: gP is the behaviour of Word's Paste (Ctl+V)
 
     'vcUndo         ' u
     'vcRedo         ' Ctl+R
@@ -107,22 +111,19 @@ Public Enum VimCommand      ' Intransitive commands
 
     ' TODO z., zt, zb, z+, z-
 
-    ' TODO /, ?, *, #, g*, g# (search based on Word's idea of a word)
+    ' TODO /, ?,
     'vcSearchNext    ' n
     'vcSearchPrev    ' N
-    vcSearchWholeWordForward    ' *
-    vcSearchWholeWordBackward   ' #
-    vcSearchWordForward         ' g*
-    vcSearchWordBackward        ' g#
+    
+    ' *, #, g*, g#          Search based on Word's idea of a word
+    ' gW*, gW#, gWg*, gWg#  Search based on a WORD (not in Vim).
+    '                       In Vim, gW is unused.  I am using it by analogy with W.
+    vcSearchWholeItemForward    ' *, gW*
+    vcSearchWholeItemBackward   ' #, gW#
+    vcSearchItemForward         ' g*, gWg*
+    vcSearchItemBackward        ' g#, gWg#
 
-
-    ' TODO gW*, gW#, gWg*, gWg# to search based on a WORD (not in Vim).
-    ' In Vim, gW is unused.  This is by analogy with W.
-    'vcSearchNonblankForward    ' z*
-    vcSearchWholeNonblankForward    ' gW*
-    vcSearchWholeNonblankBackward   ' gW#
-    vcSearchNonblankForward         ' gWg*
-    vcSearchNonblankBackward        ' gWg#
+    'vcSearchItemForward    ' z* (not in Vim) TODO
 
     ' TODO J, gJ
 End Enum 'VimCommand
@@ -251,8 +252,12 @@ Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     ' [# prev #if/#else
     ' ]# next #else/#endif
     ' [* [/ ]( ]/ C comment jumps
+    
     ' H, M, L - move within currently visible text.  Count is line number for H and L.
-
+    vmScreenTop
+    vmScreenMiddle
+    vmScreenBottom
+    
     ' Custom (not in Vim) (TODO)
     'vmRevisionForward
     'vmRevisionBackward
@@ -303,7 +308,7 @@ Private Sub UserForm_Initialize()
     WasCancelled = False
     Keys = ""
     VOperator = voUndef
-    VCommand = vcundef
+    VCommand = vcUndef
     VMotion = vmUndef
     VOperatorCount = 1
     VMotionCount = 1
@@ -317,19 +322,19 @@ Private Sub UserForm_Initialize()
     ' and re-run re2vba.pl.
 
     RE_PAT = _
-        "^(([0\^])|(([1-9][0-9]*)?(([$wWeEbB]|g\$|[fFtT](.)|\*|[#]|g\" & _
-        "*|g#|gW\*|gW#|gWg\*|gWg#)|([cdyv])?([1-9][0-9]*)?([ai]([wWsp" & _
-        "])|[fFtT](.)|[hjklGwebWEB\x28\x29\x7b\x7d]))))$" & _
+        "^(([0\^M])|(([1-9][0-9]*)?(([\$wWeEbBHL]|g\$|[fFtT](.)|(gW)?" & _
+        "g?[\*#]|g?[pP])|([cdyv])?([1-9][0-9]*)?([ai]([wWsp])|[fFtT](" & _
+        ".)|[hjklGwebWEB\x28\x29\x7b\x7d]))))$" & _
         ""
     RESM_NOCOUNT = 1
     RESM_COUNT1 = 3
     RESM_IVERB = 5
     RESM_ITEXT = 6
-    RESM_TVERB = 7
-    RESM_COUNT2 = 8
-    RESM_TOBJ = 9
-    RESM_OBJTYPE = 10
-    RESM_TTEXT = 11
+    RESM_TVERB = 8
+    RESM_COUNT2 = 9
+    RESM_TOBJ = 10
+    RESM_OBJTYPE = 11
+    RESM_TTEXT = 12
 
     ' === End of generated code ===
 
@@ -347,6 +352,7 @@ End Sub
 
 Private Sub UserForm_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
     If KeyAscii = vbKeyReturn Then
+        Keys = Keys & Chr(13)
         Update
         Me.Hide
     ElseIf KeyAscii = vbKeyBack Then
@@ -391,21 +397,32 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             Case "t": VOperator = voGo: VMotion = vmTilForward: VArg = hit.SubMatches(RESM_ITEXT)
             Case "T": VOperator = voGo: VMotion = vmTilBackward: VArg = hit.SubMatches(RESM_ITEXT)
 
+            ' Not yet implemented
+            'Case "H": VOperator = voGo: VMotion = vmScreenTop
+            'Case "M": VOperator = voGo: VMotion = vmScreenMiddle
+            'Case "L": VOperator = voGo: VMotion = vmScreenBottom
+
             Case Else:  ' Check the whole iverb, since the first character isn't enough
                 Select Case hit.SubMatches(RESM_IVERB)
                     ' Motions
                     Case "g$": VOperator = voGo: VMotion = vmEOParagraph
                     
                     ' Searches
-                    Case "*": VCommand = vcSearchWholeWordForward: VMotion = vmIWord
-                    Case "#": VCommand = vcSearchWholeWordBackward: VMotion = vmIWord
-                    Case "g*": VCommand = vcSearchWordForward: VMotion = vmIWord
-                    Case "g#": VCommand = vcSearchWordBackward: VMotion = vmIWord
+                    Case "*": VCommand = vcSearchWholeItemForward: VMotion = vmIWord
+                    Case "#": VCommand = vcSearchWholeItemBackward: VMotion = vmIWord
+                    Case "g*": VCommand = vcSearchItemForward: VMotion = vmIWord
+                    Case "g#": VCommand = vcSearchItemBackward: VMotion = vmIWord
                     
-                    Case "gW*": VCommand = vcSearchWholeNonblankForward: VMotion = vmINonblank
-                    Case "gW#": VCommand = vcSearchWholeNonblankBackward: VMotion = vmINonblank
-                    Case "gWg*": VCommand = vcSearchNonblankForward: VMotion = vmINonblank
-                    Case "gWg#": VCommand = vcSearchNonblankBackward: VMotion = vmINonblank
+                    Case "gW*": VCommand = vcSearchWholeItemForward: VMotion = vmINonblank
+                    Case "gW#": VCommand = vcSearchWholeItemBackward: VMotion = vmINonblank
+                    Case "gWg*": VCommand = vcSearchItemForward: VMotion = vmINonblank
+                    Case "gWg#": VCommand = vcSearchItemBackward: VMotion = vmINonblank
+                    
+                    ' Pastes
+                    Case "p": VCommand = vcPutAfter
+                    Case "P": VCommand = vcPutBefore
+                    Case "gp": VCommand = vcPutAfterG
+                    Case "gP": VCommand = vcPutBeforeG
                     
                     Case Else: Exit Function
                 End Select

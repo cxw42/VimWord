@@ -19,23 +19,25 @@ main        ^(  (?# Note: registers not yet implemented)
             )$
 
 # Commands that don't take a count
-nocount-piece (?<nocount>[0\^])
+nocount-piece (?<nocount>[0\^M])
 
-# Intransitive, including motions
+# Intransitive, including motions.  These can take a count, namely ?<count1>.
 intrans     (?<iverb>
-                                        (?# motions)
-                [$wWeEbB]|
+                [\$wWeEbBHL]|           (?# motions)
                 g\$|
                 [fFtT](?<itext>.)|
-                                        (?# searches)
-                \*|
-                [#]|    (?# in brackets so it does not introduce a comment)
-                g\*|
-                g#|
-                gW\*|
-                gW#|
-                gWg\*|
-                gWg#
+
+                (gW)?g?[\*#]|           (?# searches)
+#                \*|
+#                [#]|    (?# in brackets so it does not introduce a comment)
+#                g\*|
+#                g#|
+#                gW\*|
+#                gW#|
+#                gWg\*|
+#                gWg#|
+
+                g?[pP]                  (?# pastes)
             )
                 # IVERB: what to do
                         # ITEXT: character to jump to

@@ -6,12 +6,13 @@ Attribute VB_Name = "mVimWord"
 '   2018-04-06  chrisw  Initial version
 '   2018-04-20  chrisw  Split vimRunCommand off VimDoCommand
 '   2018-04-24  chrisw  Added counts to tTfF
+'   2018-05-01  chrisw  Added pastes, voChange
 
 Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.5, 2018-04-27.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.6, 2018-05-01.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -51,7 +52,7 @@ Private Sub VDCInternal(LoopIt As Boolean)
         frm.Show
         
         Dim oper As VimOperator: oper = voUndef
-        Dim cmd As VimCommand: cmd = vcundef
+        Dim cmd As VimCommand: cmd = vcUndef
         Dim motion As VimMotion: motion = vmUndef
         Dim operc As Long: operc = 0
         Dim motionc As Long: motionc = 0
@@ -70,7 +71,7 @@ Private Sub VDCInternal(LoopIt As Boolean)
     
         Unload frm
         Set frm = Nothing
-        If (cmd <> vcundef) Or (oper <> voUndef And motion <> vmUndef) Then
+        If (cmd <> vcUndef) Or (oper <> voUndef And motion <> vmUndef) Then
             vimRunCommand doc, proczone, coll, atStart, oper, cmd, motion, operc, motionc, cmdstr, arg
             Application.ScreenRefresh
         End If
@@ -99,8 +100,8 @@ Private Sub vimRunCommand( _
         ' NOT comment markers since I've been having problems with those lately
 
     ' Sanity check: we can have an operator or a command, but not both.
-    If (oper <> voUndef And cmd <> vcundef) Or _
-            (oper = voUndef And cmd = vcundef) Then
+    If (oper <> voUndef And cmd <> vcUndef) Or _
+            (oper = voUndef And cmd = vcUndef) Then
         MsgBox "Error (contact Chris White): operator " & CStr(oper) & _
                 " with command " & CStr(cmd), vbExclamation, TITLE
         Exit Sub
@@ -232,6 +233,19 @@ Private Sub vimRunCommand( _
         Case vmParaForward: proczone.MoveEnd wdParagraph, count: colldir = wdCollapseEnd
         Case vmParaBackward: proczone.MoveStart wdParagraph, -count: colldir = wdCollapseStart
 
+        ' H, M, L
+        ' -------
+        ' TODO only in wdMainTextStory:
+        ' Use selection.Move{Up,Down} wdScreen to get the screen size implicitly.
+        ' May need to use ranges elsewhere in the document if we're too close to the end.
+        ' Use ActiveWindow.ActivePane.VerticalPercentScrolled to find out where the top is
+        ' in percentage, and then binary-search the range to get close.
+        ' Jump there, then ScrollIntoView just to be on the safe side.
+        
+        'Case vmScreenTop
+        'Case vmScreenMiddle
+        'Case vmScreenBottom
+        
         ' Non-collapsing ones
         Case vmAWord:
             proczone.Expand wdWord
@@ -284,19 +298,24 @@ Private Sub vimRunCommand( _
             coll = False
 
         Case Else:
-            If cmd = vcundef Then GoTo VRC_Finally     ' Unimplemented is not an error
+            If cmd = vcUndef Then GoTo VRC_Finally     ' Unimplemented is not an error
     End Select ' motion
 
     ' Process it.  We have either an operator or a command.
     
-    If oper <> vcundef Then     ' Operators
+    If oper <> vcUndef Then     ' Operators
         Select Case oper
-            Case voDelete:
-                If proczone.Start <> proczone.End Then proczone.Delete
-                GoTo VRC_Finally
             Case voYank:
                 If proczone.Start <> proczone.End Then proczone.Copy
                 GoTo VRC_Finally
+                
+            Case voDelete:
+                If proczone.Start <> proczone.End Then proczone.Cut
+                GoTo VRC_Finally
+                
+            Case voChange:
+                If proczone.Start <> proczone.End Then proczone.Cut
+            
             ' voGo, voSelect handled below
         End Select 'operator
     
@@ -312,17 +331,37 @@ Private Sub vimRunCommand( _
         Dim searchforward As Boolean
         Dim searchwholeword As Boolean
         
+        Dim ispaste As Boolean: ispaste = False
+        Dim paste_advance As Boolean, paste_backup As Boolean
+        
         Select Case cmd
-            Case vcSearchWholeWordForward, vcSearchWholeNonblankForward:
+        
+            ' Searches
+            Case vcSearchWholeItemForward:
                 issearch = True: searchforward = True: searchwholeword = True
-            Case vcSearchWholeWordBackward, vcSearchWholeNonblankBackward:
+                
+            Case vcSearchWholeItemBackward:
                 issearch = True: searchforward = False: searchwholeword = True
                 
-            Case vcSearchWordForward, vcSearchNonblankForward:
+            Case vcSearchItemForward:
                 issearch = True: searchforward = True: searchwholeword = False
-            Case vcSearchWordBackward, vcSearchNonblankBackward:
+                
+            Case vcSearchItemBackward:
                 issearch = True: searchforward = False: searchwholeword = False
 
+            ' Pastes
+            Case vcPutAfter:
+                ispaste = True: paste_advance = True: paste_backup = True
+            
+            Case vcPutAfterG:
+                ispaste = True: paste_advance = True: paste_backup = False
+            
+            Case vcPutBefore:
+                ispaste = True: paste_advance = False: paste_backup = True
+            
+            Case vcPutBeforeG:
+                ispaste = True: paste_advance = False: paste_backup = False
+            
             Case Else: GoTo VRC_Finally
         End Select
         
@@ -332,6 +371,14 @@ Private Sub vimRunCommand( _
                 .Collapse IIf(searchforward, wdCollapseEnd, wdCollapseStart)
                 .Find.Execute proczone.Text, MatchWholeWord:=searchwholeword, Forward:=searchforward, Wrap:=wdFindContinue
             End With
+                
+        ElseIf ispaste Then
+            If paste_advance Then proczone.Move wdCharacter, 1
+            proczone.Paste
+            proczone.Collapse wdCollapseEnd
+            If paste_backup Then proczone.Move wdCharacter, -1
+            proczone.Select
+        
         End If
         
     End If
