@@ -25,7 +25,7 @@ sub stash_piece
     eval { my $re = qr{$piecetext} };
     croak "$piecename is not a valid regex: $@" if $@;
 
-    # We only support
+    # We don't support all group types
     my @bad_groups = $piecetext =~ m{
         (?<!\\)     # escaped \( are OK
         \(\?        # begin a special group
@@ -93,7 +93,7 @@ sub Main
     # Assemble the pieces into one regex
     my $full_regex = $pieces{$mainpiece};
     while($full_regex =~ s{\(\?<=([^\)]+)\)}{$pieces{$1}}gx) {
-        # nop
+        die "Unknown piece $1" unless $pieces{$1};
     }
 
     say STDERR "Full regex is -$full_regex-" unless $opts{quiet};
@@ -138,7 +138,8 @@ sub Main
             substr($full_regex, $type_start, $type_end-$type_start) = '';
             pos($full_regex) = $pos - ($type_end-$type_start);
 
-            # Stash offset for named groups
+            # Stash offset for named groups.  Note: for multiple occurrences
+            # of a group name, only the last will be preserved.
             $names{$groupidx} = $group_name if $group_name;
         }
         ++$groupidx;
@@ -147,14 +148,14 @@ sub Main
     # Escape the double-quotes for VBA
     $full_regex =~ s{"}{""}g;
 
-    # Print the definitions
-    for(my $idx=0; $opts{dim} && ($idx < $groupidx); ++$idx) {
+    # Process the definitions, and print them if desired
+    for(my $idx=0; $idx < $groupidx; ++$idx) {
         next unless exists $names{$idx};
         my $name = $names{$idx};
         $name = uc $name;
         $name =~ s{[^a-zA-Z0-9]}{_}g;
         $names{$idx} = $name;
-        say ' ' x 4, "Dim RESM_$name As Long";
+        say ' ' x 4, "Dim RESM_$name As Long" if $opts{dim};
     }
     say ' ' x 4, "Dim RE_PAT As String" if $opts{dim};
 

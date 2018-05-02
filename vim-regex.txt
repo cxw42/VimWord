@@ -6,36 +6,35 @@
 
 # Main pattern
 main        ^(  (?# Note: registers not yet implemented)
-                (?<=nocount-piece)
-                |
-                (
-                    (?<count1>[1-9][0-9]*)?
-                    (?:
-                        (?<=intrans)
-                        |
-                        (?<=trans)
-                    )
+                (?<count1>[1-9][0-9]*)?
+                (?:
+                    (?<=intrans)
+                    |
+                    (?<=trans)
                 )
             )$
 
-# Commands that don't take a count
-nocount-piece (?<nocount>[0\^M])
+# Motions that don't take arguments (although they may take counts).
+# A motion of "0" is special-cased in the parsing code to keep the regex
+# clean.  This regex, after backtracking, matches "10" as a count of "1"
+# followed by a "0" motion.  We don't handle that here.
+noarg-motion    [HMLG
+                hjkl
+                wbWB
+                \x28\x29\x7b\x7d]|
+                    (?# 28/29 are parens, move sentence )
+                    (?# 7b/7d are braces, move paragraph )
+                g?[eE0\^\$]         (?# gw, gb, etc. are not motions.)
+                (?#  ^ Note: 0 is special-cased in the parsing code.)
 
 # Intransitive, including motions.  These can take a count, namely ?<count1>.
 intrans     (?<iverb>
-                [\$wWeEbBHL]|           (?# motions)
-                g\$|
-                [fFtT](?<itext>.)|
+                (?<imotion>             (?# motions)
+                    (?<=noarg-motion)|
+                    [fFtT](?<itext>.)
+                )|
 
                 (gW)?g?[\*#]|           (?# searches)
-#                \*|
-#                [#]|    (?# in brackets so it does not introduce a comment)
-#                g\*|
-#                g#|
-#                gW\*|
-#                gW#|
-#                gWg\*|
-#                gWg#|
 
                 g?[pP]                  (?# pastes)
             )
@@ -43,12 +42,12 @@ intrans     (?<iverb>
                         # ITEXT: character to jump to
 
 # Transitive: verb, count, object, object type, text
-trans       (?<tverb>[cdyv])?               (?# TVERB: what to do)
+trans       (?<tverb>[cdyv])                (?# TVERB: what to do)
             (?<count2>[1-9][0-9]*)?         (?# Count after the operator)
             (?<tobj>                        (?# What to work on)
                 [ai](?<objtype>[wWsp])|     (?# Text objects)
-                [fFtT](?<ttext>.)|          (?# Motions with a text argument)
-                [hjklGwebWEB\x28\x29\x7b\x7d]  (?# Motions with no argument)
-            )       (?# 28/29 are parens; 7b/7d are braces)
+                [fFtT](?<ttext>.)|          (?# Motions with an argument)
+                (?<=noarg-motion)
+            )
 
 # vi: set ts=4 sts=4 sw=4 et ai ff=unix ft=sh: #

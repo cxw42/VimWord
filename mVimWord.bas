@@ -7,12 +7,18 @@ Attribute VB_Name = "mVimWord"
 '   2018-04-20  chrisw  Split vimRunCommand off VimDoCommand
 '   2018-04-24  chrisw  Added counts to tTfF
 '   2018-05-01  chrisw  Added pastes, voChange
+'   2018-05-02  chrisw  Cleanup; fixed vmNonblankBackward; added ge, gE
+
+' General comment: Word puts the cursor between characters; Vim puts the
+' cursor on characters.  This makes quite a difference.  Currently the
+' pastes match Vim closely, but the moves may not exactly.  I may need
+' to go through later on and regularize the behaviour.
 
 Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.6, 2018-05-01.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.7, 2018-05-02.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -122,7 +128,7 @@ Private Sub vimRunCommand( _
     Dim colldir As WdCollapseDirection
     colldir = wdCollapseEnd ' by default
 
-    Dim idx As Long, result As Long
+    Dim idx As Long, result As Long, ltmp As Long
 
     Select Case motion
         Case vmLeft: proczone.MoveStart wdCharacter, -count: colldir = wdCollapseStart
@@ -204,6 +210,16 @@ Private Sub vimRunCommand( _
         Case vmWordBackward:
             colldir = wdCollapseStart
             proczone.MoveStart wdWord, -count
+            
+        Case vmEOWordBackward:      ' ge
+            colldir = wdCollapseEnd
+            proczone.MoveStart wdWord, -count
+            ltmp = proczone.End
+            proczone.Collapse wdCollapseStart
+            proczone.Expand wdWord
+            proczone.Collapse wdCollapseEnd
+            proczone.MoveStartWhile CSET_WS, wdBackward
+            proczone.End = ltmp
 
         Case vmNonblankForward:
             colldir = wdCollapseEnd
@@ -222,12 +238,28 @@ Private Sub vimRunCommand( _
 
         Case vmNonblankBackward:
             colldir = wdCollapseStart
-            proczone.MoveStartUntil CSET_WS, wdBackward
-            For idx = 2 To count
+            
+            ' TODO handle failures (MoveStartUntil returns 0).  Move to
+            ' beginning of paragraph?  Likewise, handle errors in
+            ' all other MoveStart/MoveEnd calls throughout.
+            ' Test case: in the first nonblank in the file.
+            For idx = 1 To count
                 proczone.MoveStartWhile CSET_WS, wdBackward
+                    ' In case the cursor is already on whitespace.
+                    ' TODO adjust similarly throughout if necessary
                 proczone.MoveStartUntil CSET_WS, wdBackward
             Next idx
 
+        Case vmEONonblankBackward:  'gE
+            colldir = wdCollapseEnd
+            
+            For idx = 1 To count - 1
+                proczone.MoveStartWhile CSET_WS, wdBackward
+                proczone.MoveStartUntil CSET_WS, wdBackward
+            Next idx
+            
+            proczone.MoveStartWhile CSET_WS, wdBackward
+            
         Case vmSentenceForward: proczone.MoveEnd wdSentence, count: colldir = wdCollapseEnd
         Case vmSentenceBackward: proczone.MoveStart wdSentence, -count: colldir = wdCollapseStart
         Case vmParaForward: proczone.MoveEnd wdParagraph, count: colldir = wdCollapseEnd
@@ -373,6 +405,7 @@ Private Sub vimRunCommand( _
             End With
                 
         ElseIf ispaste Then
+            ' TODO implement counts
             If paste_advance Then proczone.Move wdCharacter, 1
             proczone.Paste
             proczone.Collapse wdCollapseEnd

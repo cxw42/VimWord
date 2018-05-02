@@ -15,10 +15,12 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 ' frmGrabKeys: collect keypresses and parse Vim commands
 ' Copyright (c) 2018 Chris White.  All rights reserved.
+' See changelog in mVimWord for other changes
 '   2018-04-06  chrisw  Initial version
 '   2018-04-20  chrisw  Major expansion/rewrite
 '   2018-04-24  chrisw  Change "s" to "v" (visual selection)
 '   2018-04-26  chrisw  Changed regex from hand-generated to re2vba.pl
+'   2018-05-02  chrisw  Refactored motion code into ProcessMotion_
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -111,7 +113,7 @@ Public Enum VimCommand      ' Intransitive commands
 
     ' TODO z., zt, zb, z+, z-
 
-    ' TODO /, ?,
+    ' TODO /, ?
     'vcSearchNext    ' n
     'vcSearchPrev    ' N
     
@@ -231,8 +233,8 @@ Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     vmWordBackward          ' b excl
     vmNonblankBackward      ' B excl
 
-    'vmEOWordBackward        ' ge incl not yet impl
-    'vmEONonblankBackward    ' gE incl "
+    vmEOWordBackward        ' ge incl
+    vmEONonblankBackward    ' gE incl
 
     ' :help object-motions
     vmSentenceForward   ' )
@@ -283,25 +285,18 @@ Public VArg As String
 
 ' Regexp
 Private RE_ACT As VBScript_RegExp_55.RegExp
-' Submatch numbers
 
+' Submatch numbers - see vim-regex.txt
 'Private RESM_REGISTER As Long  ' Not yet implemented
-
-' For no-count sentences
-Private RESM_NOCOUNT As Long
-
 Private RESM_COUNT1 As Long
-
-' For intransitive sentences
 Private RESM_IVERB As Long
-Private RESM_ITEXT As Long      ' Text for motions such as t and f
-
-' For transitive sentences
-Private RESM_TVERB As Long      ' a transitive verb
-Private RESM_COUNT2 As Long     ' Only for transitive sentences
-Private RESM_TOBJ As Long       ' " - a motion or text object
-Private RESM_OBJTYPE As Long    ' When selecting text objects, which kind of object
-Private RESM_TTEXT As Long      ' Text for motions such as t and f
+Private RESM_IMOTION As Long
+Private RESM_ITEXT As Long
+Private RESM_TVERB As Long
+Private RESM_COUNT2 As Long
+Private RESM_TOBJ As Long
+Private RESM_OBJTYPE As Long
+Private RESM_TTEXT As Long
 '
 
 Private Sub UserForm_Initialize()
@@ -322,20 +317,21 @@ Private Sub UserForm_Initialize()
     ' and re-run re2vba.pl.
 
     RE_PAT = _
-        "^(([0\^M])|(([1-9][0-9]*)?(([\$wWeEbBHL]|g\$|[fFtT](.)|(gW)?" & _
-        "g?[\*#]|g?[pP])|([cdyv])?([1-9][0-9]*)?([ai]([wWsp])|[fFtT](" & _
-        ".)|[hjklGwebWEB\x28\x29\x7b\x7d]))))$" & _
+        "^(([1-9][0-9]*)?((([HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$" & _
+        "]|[fFtT](.))|(gW)?g?[\*#]|g?[pP])|([cdyv])([1-9][0-9]*)?([ai" & _
+        "]([wWsp])|[fFtT](.)|[HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\" & _
+        "$])))$" & _
         ""
-    RESM_NOCOUNT = 1
-    RESM_COUNT1 = 3
-    RESM_IVERB = 5
-    RESM_ITEXT = 6
-    RESM_TVERB = 8
-    RESM_COUNT2 = 9
-    RESM_TOBJ = 10
-    RESM_OBJTYPE = 11
-    RESM_TTEXT = 12
-
+    RESM_COUNT1 = 1
+    RESM_IVERB = 3
+    RESM_IMOTION = 4
+    RESM_ITEXT = 5
+    RESM_TVERB = 7
+    RESM_COUNT2 = 8
+    RESM_TOBJ = 9
+    RESM_OBJTYPE = 10
+    RESM_TTEXT = 11
+    
     ' === End of generated code ===
 
     Set RE_ACT = New VBScript_RegExp_55.RegExp
@@ -368,70 +364,128 @@ End Sub 'KeyPress
 
 ' Main workers ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
+Private Function ProcessMotion_(motion As String) As Boolean
+' Return true iff #motion is an understood general or nocount motion.
+' Sets VMotion on success.  Does not handle text objects or motions
+' with arguments (fFtT).
+    
+    ProcessMotion_ = True
+    
+    Select Case motion
+        Case "H": VMotion = vmScreenTop
+        Case "M": VMotion = vmScreenMiddle
+        Case "L": VMotion = vmScreenBottom
+        Case "G": VMotion = vmLine
+        
+        Case "h": VMotion = vmLeft
+        Case "j": VMotion = vmDown
+        Case "k": VMotion = vmUp
+        Case "l": VMotion = vmRight
+
+        Case "w": VMotion = vmWordForward
+        Case "b": VMotion = vmWordBackward
+        Case "W": VMotion = vmNonblankForward
+        Case "B": VMotion = vmNonblankBackward
+        
+        Case ")": VMotion = vmSentenceForward
+        Case "(": VMotion = vmSentenceBackward
+        Case "}": VMotion = vmParaForward
+        Case "{": VMotion = vmParaBackward
+        
+        Case "e": VMotion = vmEOWordForward
+        Case "E": VMotion = vmEONonblankForward
+        Case "ge": VMotion = vmEOWordBackward
+        Case "gE": VMotion = vmEONonblankBackward
+        
+        Case "0": VMotion = vmStartOfParagraph
+        Case "^": VMotion = vmStartOfLine
+        Case "$": VMotion = vmEOL
+        
+        'Case "g0": VMotion = vmStartOfParagraph     ' TODO decide what this should do
+        'Case "g^": VMotion = vmStartOfLine          ' TODO decide what this should do
+        Case "g$": VMotion = vmEOParagraph
+        
+        Case Else: ProcessMotion_ = False
+    End Select
+End Function 'ProcessMotion_
+'
+
 Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
 ' Returns true if parse succeeded
     ProcessHit_ = False
 
-    If Not IsEmpty(hit.SubMatches(RESM_NOCOUNT)) Then   ' no-count
-        Select Case Left(hit.SubMatches(RESM_NOCOUNT), 1)
-            Case "0": VOperator = voGo: VMotion = vmStartOfParagraph
-            Case "^": VOperator = voGo: VMotion = vmStartOfLine
-            Case Else: Exit Function
-        End Select
+    ' Consistent values at the start
+    VOperator = voUndef
+    VCommand = vcUndef
+    VMotion = vmUndef
+    VOperatorCount = 1
+    VMotionCount = 1
+    VArg = ""
 
-    ElseIf IsEmpty(hit.SubMatches(RESM_TVERB)) Then    ' intransitive
+    ' Special-case "0" in code so that I don't have to special-case it in the
+    ' regex.  A non-empty count preceding a "0" command means that the "0"
+    ' should actually be part of the count, so wait for more keys.
+    
+    If (Not IsEmpty(hit.SubMatches(RESM_COUNT1))) And _
+        (hit.SubMatches(RESM_IMOTION) = "0") _
+    Then        ' ^ Empty decays to ""
+        Exit Function
+    End If
+    
+    ' Count before the command, if any
+    If Len(hit.SubMatches(RESM_COUNT1)) = 0 Then
+        ' Note: works because Len(Empty) returns 0
+        VOperatorCount = 1
+    Else
+        VOperatorCount = CLng(hit.SubMatches(RESM_COUNT1))
+    End If
+
+    If Not IsEmpty(hit.SubMatches(RESM_IVERB)) Then     ' intransitive
 
         'Debug.Print "Intransit.", Left(hit.SubMatches(RESM_IVERB), 1), hit.SubMatches(RESM_ITEXT)
 
-        Select Case Left(hit.SubMatches(RESM_IVERB), 1)
-            Case "$": VOperator = voGo: VMotion = vmEOL
-            Case "w": VOperator = voGo: VMotion = vmWordForward
-            Case "W": VOperator = voGo: VMotion = vmNonblankForward
-            Case "e": VOperator = voGo: VMotion = vmEOWordForward
-            Case "E": VOperator = voGo: VMotion = vmEONonblankForward
-            Case "b": VOperator = voGo: VMotion = vmWordBackward
-            Case "B": VOperator = voGo: VMotion = vmNonblankBackward
-
-            Case "f": VOperator = voGo: VMotion = vmCharForward: VArg = hit.SubMatches(RESM_ITEXT)
-            Case "F": VOperator = voGo: VMotion = vmCharBackward: VArg = hit.SubMatches(RESM_ITEXT)
-            Case "t": VOperator = voGo: VMotion = vmTilForward: VArg = hit.SubMatches(RESM_ITEXT)
-            Case "T": VOperator = voGo: VMotion = vmTilBackward: VArg = hit.SubMatches(RESM_ITEXT)
-
-            ' Not yet implemented
-            'Case "H": VOperator = voGo: VMotion = vmScreenTop
-            'Case "M": VOperator = voGo: VMotion = vmScreenMiddle
-            'Case "L": VOperator = voGo: VMotion = vmScreenBottom
-
-            Case Else:  ' Check the whole iverb, since the first character isn't enough
-                Select Case hit.SubMatches(RESM_IVERB)
-                    ' Motions
-                    Case "g$": VOperator = voGo: VMotion = vmEOParagraph
-                    
-                    ' Searches
-                    Case "*": VCommand = vcSearchWholeItemForward: VMotion = vmIWord
-                    Case "#": VCommand = vcSearchWholeItemBackward: VMotion = vmIWord
-                    Case "g*": VCommand = vcSearchItemForward: VMotion = vmIWord
-                    Case "g#": VCommand = vcSearchItemBackward: VMotion = vmIWord
-                    
-                    Case "gW*": VCommand = vcSearchWholeItemForward: VMotion = vmINonblank
-                    Case "gW#": VCommand = vcSearchWholeItemBackward: VMotion = vmINonblank
-                    Case "gWg*": VCommand = vcSearchItemForward: VMotion = vmINonblank
-                    Case "gWg#": VCommand = vcSearchItemBackward: VMotion = vmINonblank
-                    
-                    ' Pastes
-                    Case "p": VCommand = vcPutAfter
-                    Case "P": VCommand = vcPutBefore
-                    Case "gp": VCommand = vcPutAfterG
-                    Case "gP": VCommand = vcPutBeforeG
-                    
+        If Not IsEmpty(hit.SubMatches(RESM_IMOTION)) Then
+            If ProcessMotion_(hit.SubMatches(RESM_IMOTION)) Then
+                VOperator = voGo
+            Else
+                Select Case Left(hit.SubMatches(RESM_IVERB), 1)
+                    Case "f": VOperator = voGo: VMotion = vmCharForward: VArg = hit.SubMatches(RESM_ITEXT)
+                    Case "F": VOperator = voGo: VMotion = vmCharBackward: VArg = hit.SubMatches(RESM_ITEXT)
+                    Case "t": VOperator = voGo: VMotion = vmTilForward: VArg = hit.SubMatches(RESM_ITEXT)
+                    Case "T": VOperator = voGo: VMotion = vmTilBackward: VArg = hit.SubMatches(RESM_ITEXT)
                     Case Else: Exit Function
                 End Select
-        End Select
-
-    Else                                            ' transitive
+            End If
+        
+        Else    ' Not a motion, so it's a search or a paste
+        
+            Select Case hit.SubMatches(RESM_IVERB)
+                ' Searches
+                Case "*": VCommand = vcSearchWholeItemForward: VMotion = vmIWord
+                Case "#": VCommand = vcSearchWholeItemBackward: VMotion = vmIWord
+                Case "g*": VCommand = vcSearchItemForward: VMotion = vmIWord
+                Case "g#": VCommand = vcSearchItemBackward: VMotion = vmIWord
+                
+                Case "gW*": VCommand = vcSearchWholeItemForward: VMotion = vmINonblank
+                Case "gW#": VCommand = vcSearchWholeItemBackward: VMotion = vmINonblank
+                Case "gWg*": VCommand = vcSearchItemForward: VMotion = vmINonblank
+                Case "gWg#": VCommand = vcSearchItemBackward: VMotion = vmINonblank
+                
+                ' Pastes
+                Case "p": VCommand = vcPutAfter
+                Case "P": VCommand = vcPutBefore
+                Case "gp": VCommand = vcPutAfterG
+                Case "gP": VCommand = vcPutBeforeG
+                
+                Case Else: Exit Function
+            End Select
+        End If 'a motion else
+        
+    ElseIf Not IsEmpty(hit.SubMatches(RESM_TVERB)) Then     ' transitive
 
         'Debug.Print "Transitive", hit.SubMatches(RESM_TVERB), hit.SubMatches(RESM_COUNT2), Left(hit.SubMatches(RESM_TOBJ), 1), hit.SubMatches(RESM_OBJTYPE), hit.SubMatches(RESM_TTEXT)
 
+        ' Operator
         Select Case hit.SubMatches(RESM_TVERB)
             Case "c": VOperator = voChange
             Case "d": VOperator = voDelete
@@ -440,55 +494,46 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             Case Else: Exit Function
         End Select
 
+        ' Post-operator count
         If Len(hit.SubMatches(RESM_COUNT2)) = 0 Then
             VMotionCount = 1
         Else
             VMotionCount = CLng(hit.SubMatches(RESM_COUNT2))
         End If
 
-        Select Case Left(hit.SubMatches(RESM_TOBJ), 1)
-            Case "a":
-                Select Case hit.SubMatches(RESM_OBJTYPE)
-                    Case "w": VMotion = vmAWord
-                    Case "W": VMotion = vmANonblank
-                    Case "s": VMotion = vmASentence
-                    Case "p": VMotion = vmAPara
-                End Select
-
-            Case "i":
-                Select Case hit.SubMatches(RESM_OBJTYPE)
-                    Case "w": VMotion = vmIWord
-                    Case "W": VMotion = vmINonblank
-                    Case "s": VMotion = vmISentence
-                    Case "p": VMotion = vmIPara
-                End Select
-
-            Case "f": VMotion = vmCharForward: VArg = hit.SubMatches(RESM_TTEXT)
-            Case "F": VMotion = vmCharBackward: VArg = hit.SubMatches(RESM_TTEXT)
-            Case "t": VMotion = vmTilForward: VArg = hit.SubMatches(RESM_TTEXT)
-            Case "T": VMotion = vmTilBackward: VArg = hit.SubMatches(RESM_TTEXT)
-
-            Case "h": VMotion = vmLeft
-            Case "j": VMotion = vmDown
-            Case "k": VMotion = vmUp
-            Case "l": VMotion = vmRight
-            Case "G": VMotion = vmLine
-
-            Case "w": VMotion = vmWordForward
-            Case "e": VMotion = vmEOWordForward
-            Case "b": VMotion = vmWordBackward
-            Case "W": VMotion = vmNonblankForward
-            Case "E": VMotion = vmEONonblankForward
-            Case "B": VMotion = vmNonblankBackward
-            Case ")": VMotion = vmSentenceForward
-            Case "(": VMotion = vmSentenceBackward
-            Case "}": VMotion = vmParaForward
-            Case "{": VMotion = vmParaBackward
-
-            Case Else: Exit Function
-        End Select
-
-    End If ' Intransitive else
+        ' Process the motion
+        If Not ProcessMotion_(hit.SubMatches(RESM_TOBJ)) Then
+            Select Case Left(hit.SubMatches(RESM_TOBJ), 1)
+                Case "a":
+                    Select Case hit.SubMatches(RESM_OBJTYPE)
+                        Case "w": VMotion = vmAWord
+                        Case "W": VMotion = vmANonblank
+                        Case "s": VMotion = vmASentence
+                        Case "p": VMotion = vmAPara
+                    End Select
+    
+                Case "i":
+                    Select Case hit.SubMatches(RESM_OBJTYPE)
+                        Case "w": VMotion = vmIWord
+                        Case "W": VMotion = vmINonblank
+                        Case "s": VMotion = vmISentence
+                        Case "p": VMotion = vmIPara
+                    End Select
+    
+                Case "f": VMotion = vmCharForward: VArg = hit.SubMatches(RESM_TTEXT)
+                Case "F": VMotion = vmCharBackward: VArg = hit.SubMatches(RESM_TTEXT)
+                Case "t": VMotion = vmTilForward: VArg = hit.SubMatches(RESM_TTEXT)
+                Case "T": VMotion = vmTilBackward: VArg = hit.SubMatches(RESM_TTEXT)
+    
+                Case Else: Exit Function
+            End Select
+        End If
+        
+    Else    ' Neither intransitive nor transitive
+        MsgBox "This shouldn't happen - no iverb or tverb.  Send a screenshot of this box to Chris White: -" & hit.Value & "-", vbExclamation, "VimWord"
+        Exit Function
+        
+    End If 'intransitive else transitive else
 
     ProcessHit_ = True    ' If we made it here, the parse was successful
 
@@ -498,8 +543,6 @@ End Function ' ProcessHit_
 Private Sub Update()
     Dim done As Boolean: done = False
     lblKeys.Caption = Keys
-
-    VArg = ""   ' empty unless assigned below (fFtT)
 
     ' parse Vim commands to see if one is done
     Dim matches As VBScript_RegExp_55.MatchCollection
@@ -511,17 +554,8 @@ Private Sub Update()
             Set hit = matches.Item(0)
             If hit.SubMatches.count < 1 Then Exit Do
 
-            If Len(hit.SubMatches(RESM_COUNT1)) = 0 Then
-                ' Note: works because Len(Empty) returns 0
-                VOperatorCount = 1
-            Else
-                VOperatorCount = CLng(hit.SubMatches(RESM_COUNT1))
-            End If
-
             done = ProcessHit_(hit)
-
             'If done Then Debug.Print "", "operator count:", VOperatorCount
-
         Loop While False
     End If
 

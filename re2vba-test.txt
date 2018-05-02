@@ -14,4 +14,9 @@ piece2  ((?<upperalpha>[A-Z])(?<p2>something))\\a+
 piece1  [a-z](?<p1>thing)  (?#comment!)
 
 __END__
+
+# Test text from http://www.gutenberg.org/cache/epub/3536/pg3536.html
+# The Project Gutenberg Etext of The Enchanted Castle, by E. Nesbit
+
+"No; we’ll have an out-of-doors game bandits, or something like that. It wouldn't be bad if we could get a cave and keep stores in it, and have our meals there."
 # vi: set ts=4 sts=4 sw=4 et ai ff=unix ft=sh: #
