@@ -13,7 +13,7 @@ Public Enum CHARCODES
     U_HYPHEN = &H2D         ' A regular hyphen (HYPHEN-MINUS)
     U_OPT_HYPHEN = &HAD     ' Optional hyphen, in Unicode (SOFT HYPHEN)
     U_ZWJ = &H200D          ' zero-width joiner
-    
+
     U_REAL_HYPHEN = &H2010  ' Unicode HYPHEN
     U_NONBREAK_HYPHEN = &H2011  ' Unicode non-breaking hyphen
     U_FIGURE_DASH = &H2012
@@ -26,7 +26,7 @@ Public Enum CHARCODES
     U_NUMERO_SIGN = &H2116  ' which I use to hide numbers from frmRebuildPNXRefs
     U_WAVE_DASH = &H301C    ' Japanese figure dash
     U_FULLWIDTH_TILDE = &HFF5E  ' Alternative JP figure dash
-    
+
     W_COMMENT = &H5     ' the marker in the body of the text where a comment is
     W_NBHYPHEN = &H1E   ' non-breaking hyphen, MS Word
     W_OPTHYPHEN = &H1F  ' optional hyphen
@@ -66,7 +66,7 @@ Public Const PAT_WS_CHARS As String = "\x05\x09\x0a\x0d\x20\xa0" & _
     '   http://www.fileformat.info/info/unicode/category/Zs/list.htm
     '   http://www.fileformat.info/info/unicode/category/Zl/list.htm
     '   http://www.fileformat.info/info/unicode/category/Zp/list.htm
-    
+
 Public Const PAT_WS As String = "[" & PAT_WS_CHARS & "]"
     ' The corresponding character class
 
@@ -76,5 +76,4 @@ Public Const PAT_WS_PLUS As String = PAT_WS & "+"
     ' 100% organic, fair trade, non-GMO cane sugar.  Oh so sweet!
 
 Public Const S_SPACE = " "
-
 

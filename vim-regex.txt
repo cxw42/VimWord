@@ -17,7 +17,7 @@ main        ^(  (?# Note: registers not yet implemented)
 # Motions that don't take arguments (although they may take counts).
 # A motion of "0" is special-cased in the parsing code to keep the regex
 # clean.  This regex, after backtracking, matches "10" as a count of "1"
-# followed by a "0" motion.  We don't handle that here.
+# followed by a "0" motion.  We special-case rather than handling that here.
 noarg-motion    [HMLG
                 hjkl
                 wbWB
@@ -41,11 +41,17 @@ intrans     (?<iverb>
                 # IVERB: what to do
                         # ITEXT: character to jump to
 
+# Text-object selection ([ai][something])
+textobj     (?<ninja>[\[\]])?               (?# Ninja-feet marker)
+                                    # https://github.com/tommcdo/vim-ninja-feet
+            (?<tobj_range>[ai])             (?# Introducer)
+            (?<objtype>[wWsp])              (?# Type of text object)
+
 # Transitive: verb, count, object, object type, text
 trans       (?<tverb>[cdyv])                (?# TVERB: what to do)
             (?<count2>[1-9][0-9]*)?         (?# Count after the operator)
-            (?<tobj>                        (?# What to work on)
-                [ai](?<objtype>[wWsp])|     (?# Text objects)
+            (?<target>                      (?# What to work on)
+                (?<=textobj)|               (?# Text objects)
                 [fFtT](?<ttext>.)|          (?# Motions with an argument)
                 (?<=noarg-motion)
             )

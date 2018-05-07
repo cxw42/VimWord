@@ -8,17 +8,18 @@ Attribute VB_Name = "mVimWord"
 '   2018-04-24  chrisw  Added counts to tTfF
 '   2018-05-01  chrisw  Added pastes, voChange
 '   2018-05-02  chrisw  Cleanup; fixed vmNonblankBackward; added ge, gE
+'   2018-05-04  chrisw  Changed paste behaviour per Word
+'   2018-05-07  chrisw  gp/gP now paste unformatted text; added ninja-feet
 
 ' General comment: Word puts the cursor between characters; Vim puts the
-' cursor on characters.  This makes quite a difference.  Currently the
-' pastes match Vim closely, but the moves may not exactly.  I may need
+' cursor on characters.  This makes quite a difference.  I may need
 ' to go through later on and regularize the behaviour.
 
 Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.7, 2018-05-02.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.9, 2018-05-07.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -37,26 +38,26 @@ Private Sub VDCInternal(LoopIt As Boolean)
 
     On Error Resume Next: Set doc = ActiveDocument: On Error GoTo 0
     If doc Is Nothing Then Exit Sub
-    
+
     Dim stay_in_normal As Boolean: stay_in_normal = False
-    
+
     Do
         Dim proczone As Range, coll As Boolean, atStart As Variant
         atStart = Empty
         Set proczone = GetProczone_V(doc:=doc, _
                             iswholedoc:=coll, start_is_active:=atStart)
-    
+
         If coll Then    ' coll => collapsed selection, so don't use the whole doc
                         ' (which is what GetProczone_V gave us)
             Set proczone = doc.ActiveWindow.Selection.Range.Duplicate
             atStart = Empty
         End If
-    
+
         ' Get the command
         Dim frm As frmGrabKeys
         Set frm = New frmGrabKeys
         frm.Show
-        
+
         Dim oper As VimOperator: oper = voUndef
         Dim cmd As VimCommand: cmd = vcUndef
         Dim motion As VimMotion: motion = vmUndef
@@ -64,7 +65,8 @@ Private Sub VDCInternal(LoopIt As Boolean)
         Dim motionc As Long: motionc = 0
         Dim cmdstr As String: cmdstr = ""
         Dim arg As String: arg = ""
-    
+        Dim ninja As VimNinja: ninja = vnUndef
+
         If Not frm.WasCancelled Then
             cmdstr = frm.Keys
             oper = frm.VOperator
@@ -73,15 +75,17 @@ Private Sub VDCInternal(LoopIt As Boolean)
             operc = frm.VOperatorCount
             motionc = frm.VMotionCount
             arg = frm.VArg
+            ninja = frm.VNinja
         End If
-    
+
         Unload frm
         Set frm = Nothing
         If (cmd <> vcUndef) Or (oper <> voUndef And motion <> vmUndef) Then
-            vimRunCommand doc, proczone, coll, atStart, oper, cmd, motion, operc, motionc, cmdstr, arg
+            vimRunCommand doc, proczone, coll, atStart, oper, cmd, motion, _
+                operc, motionc, cmdstr, arg, ninja
             Application.ScreenRefresh
         End If
-        
+
         ' d and y leave you in normal mode; s and c do not.
         ' TODO expand this list in the future.
         stay_in_normal = (oper = voDelete) Or (oper = voYank)
@@ -99,7 +103,8 @@ Private Sub vimRunCommand( _
     operc As Long, _
     motionc As Long, _
     cmdstr As String, _
-    arg As String _
+    arg As String, _
+    ninja As VimNinja _
 )
     Dim TITLE As String: TITLE = "Do Vim command"
     Dim CSET_WS As String: CSET_WS = " " & Chr(9) & Chr(10) & Chr(12) & Chr(13)
@@ -112,7 +117,12 @@ Private Sub vimRunCommand( _
                 " with command " & CStr(cmd), vbExclamation, TITLE
         Exit Sub
     End If
-    
+
+    ' Save the incoming proczone for ninja-feet
+    Dim origpzstart As Long, origpzend As Long
+    origpzstart = proczone.Start
+    origpzend = proczone.End
+
     Dim undos As UndoRecord
     Set undos = Application.UndoRecord
 
@@ -130,6 +140,8 @@ Private Sub vimRunCommand( _
 
     Dim idx As Long, result As Long, ltmp As Long
 
+    ' === Motion ============================================================
+
     Select Case motion
         Case vmLeft: proczone.MoveStart wdCharacter, -count: colldir = wdCollapseStart
         Case vmRight: proczone.MoveEnd wdCharacter, count: colldir = wdCollapseEnd
@@ -146,13 +158,13 @@ Private Sub vimRunCommand( _
         Case vmStartOfLine, vmEOL:
             Set proczone = moveHorizontal_( _
                 motion = vmStartOfLine, doc, proczone, colldir)
-            
+
             If motion = vmEOL And count > 1 Then
                 proczone.MoveEnd wdParagraph, count - 1
             End If
 
         Case vmStartOfParagraph: proczone.Start = proczone.Paragraphs(1).Range.Start: colldir = wdCollapseStart
-        
+
         Case vmEOParagraph:
             proczone.Start = proczone.Paragraphs(1).Range.Start
             colldir = wdCollapseEnd
@@ -177,7 +189,7 @@ Private Sub vimRunCommand( _
                 If proczone.MoveStartUntil(arg, wdBackward) = 0 Then Exit For
                 proczone.MoveStart wdCharacter, -1      ' F => to and including
             Next idx
-            
+
         Case vmTilForward:
             arg = ExpandCSet_(arg)
             colldir = wdCollapseEnd
@@ -187,7 +199,7 @@ Private Sub vimRunCommand( _
                 proczone.MoveEnd wdCharacter, 1
                 result = proczone.MoveEndUntil(arg, wdForward)
             Next idx
-            
+
         Case vmTilBackward:
             arg = ExpandCSet_(arg)
             colldir = wdCollapseStart
@@ -201,7 +213,7 @@ Private Sub vimRunCommand( _
         Case vmWordForward:
             colldir = wdCollapseEnd
             proczone.MoveEnd wdWord, count
-        
+
         Case vmEOWordForward:
             colldir = wdCollapseEnd
             proczone.MoveEnd wdWord, count
@@ -210,7 +222,7 @@ Private Sub vimRunCommand( _
         Case vmWordBackward:
             colldir = wdCollapseStart
             proczone.MoveStart wdWord, -count
-            
+
         Case vmEOWordBackward:      ' ge
             colldir = wdCollapseEnd
             proczone.MoveStart wdWord, -count
@@ -238,7 +250,7 @@ Private Sub vimRunCommand( _
 
         Case vmNonblankBackward:
             colldir = wdCollapseStart
-            
+
             ' TODO handle failures (MoveStartUntil returns 0).  Move to
             ' beginning of paragraph?  Likewise, handle errors in
             ' all other MoveStart/MoveEnd calls throughout.
@@ -252,14 +264,14 @@ Private Sub vimRunCommand( _
 
         Case vmEONonblankBackward:  'gE
             colldir = wdCollapseEnd
-            
+
             For idx = 1 To count - 1
                 proczone.MoveStartWhile CSET_WS, wdBackward
                 proczone.MoveStartUntil CSET_WS, wdBackward
             Next idx
-            
+
             proczone.MoveStartWhile CSET_WS, wdBackward
-            
+
         Case vmSentenceForward: proczone.MoveEnd wdSentence, count: colldir = wdCollapseEnd
         Case vmSentenceBackward: proczone.MoveStart wdSentence, -count: colldir = wdCollapseStart
         Case vmParaForward: proczone.MoveEnd wdParagraph, count: colldir = wdCollapseEnd
@@ -273,11 +285,11 @@ Private Sub vimRunCommand( _
         ' Use ActiveWindow.ActivePane.VerticalPercentScrolled to find out where the top is
         ' in percentage, and then binary-search the range to get close.
         ' Jump there, then ScrollIntoView just to be on the safe side.
-        
+
         'Case vmScreenTop
         'Case vmScreenMiddle
         'Case vmScreenBottom
-        
+
         ' Non-collapsing ones
         Case vmAWord:
             proczone.Expand wdWord
@@ -333,89 +345,113 @@ Private Sub vimRunCommand( _
             If cmd = vcUndef Then GoTo VRC_Finally     ' Unimplemented is not an error
     End Select ' motion
 
+    ' Ninja-feet
+    Select Case ninja
+        Case vnLeft     ' [
+            proczone.End = origpzend
+        Case vnRight
+            proczone.Start = origpzstart
+    End Select
+
+    ' === Operator/Command ==================================================
+
     ' Process it.  We have either an operator or a command.
-    
+    ' TODO merge operator and command enums, since they are mutually exclusive.
+
     If oper <> vcUndef Then     ' Operators
         Select Case oper
             Case voYank:
                 If proczone.Start <> proczone.End Then proczone.Copy
                 GoTo VRC_Finally
-                
+
             Case voDelete:
                 If proczone.Start <> proczone.End Then proczone.Cut
                 GoTo VRC_Finally
-                
+
             Case voChange:
                 If proczone.Start <> proczone.End Then proczone.Cut
-            
+
             ' voGo, voSelect handled below
         End Select 'operator
-    
+
         If (oper = voGo) And coll Then
             proczone.Collapse colldir
         End If
-    
+
         proczone.Select     ' Handles voSelect
-        
+
     Else                        ' Commands
-    
+
         Dim issearch As Boolean: issearch = False
         Dim searchforward As Boolean
         Dim searchwholeword As Boolean
-        
+
         Dim ispaste As Boolean: ispaste = False
-        Dim paste_advance As Boolean, paste_backup As Boolean
-        
+        Dim paste_plain As Boolean
+        Dim paste_backup As Boolean
+
         Select Case cmd
-        
+
             ' Searches
             Case vcSearchWholeItemForward:
                 issearch = True: searchforward = True: searchwholeword = True
-                
+
             Case vcSearchWholeItemBackward:
                 issearch = True: searchforward = False: searchwholeword = True
-                
+
             Case vcSearchItemForward:
                 issearch = True: searchforward = True: searchwholeword = False
-                
+
             Case vcSearchItemBackward:
                 issearch = True: searchforward = False: searchwholeword = False
 
             ' Pastes
             Case vcPutAfter:
-                ispaste = True: paste_advance = True: paste_backup = True
-            
+                ispaste = True: paste_backup = False: paste_plain = False
+
             Case vcPutAfterG:
-                ispaste = True: paste_advance = True: paste_backup = False
-            
+                ispaste = True: paste_backup = False: paste_plain = True
+
             Case vcPutBefore:
-                ispaste = True: paste_advance = False: paste_backup = True
-            
+                ispaste = True: paste_backup = True: paste_plain = False
+
             Case vcPutBeforeG:
-                ispaste = True: paste_advance = False: paste_backup = False
-            
+                ispaste = True: paste_backup = True: paste_plain = True
+
             Case Else: GoTo VRC_Finally
         End Select
-        
+
         If issearch Then
             proczone.Select
             With doc.ActiveWindow.Selection
                 .Collapse IIf(searchforward, wdCollapseEnd, wdCollapseStart)
                 .Find.Execute proczone.Text, MatchWholeWord:=searchwholeword, Forward:=searchforward, Wrap:=wdFindContinue
             End With
-                
+
         ElseIf ispaste Then
             ' TODO implement counts
-            If paste_advance Then proczone.Move wdCharacter, 1
-            proczone.Paste
-            proczone.Collapse wdCollapseEnd
-            If paste_backup Then proczone.Move wdCharacter, -1
+            If Not paste_plain Then
+                proczone.Paste
+
+            Else
+                ' PasteSpecial leaves the range collapsed at the end of
+                ' what was pasted.  Therefore, save/restore the start.
+                Dim pzstart As Long
+                pzstart = proczone.Start
+
+                proczone.PasteSpecial Link:=False, DataType:=20, Placement:=wdInLine, _
+                    DisplayAsIcon:=False    ' 20 = unformatted Unicode text
+
+                proczone.Start = pzstart
+            End If
+
+            proczone.Collapse IIf(paste_backup, wdCollapseStart, wdCollapseEnd)
             proczone.Select
-        
+
         End If
-        
+
     End If
-    
+
 VRC_Finally:
     On Error Resume Next    ' or else errors in the cleanup code cause infinite loops
     Application.ScreenUpdating = True
@@ -536,9 +572,9 @@ Private Function ExpandCSet_(arg As String) As String
     ExpandCSet_ = arg
     Select Case arg
         Case " ": ExpandCSet_ = " " & ChrW(W_NBSP) & ChrW(U_TAB)
-        
+
         Case "'": ExpandCSet_ = "'" & ChrW(U_CURLY_APOS) & ChrW(U_CURLY_BACKQUOTE)
-        
+
         Case """": ExpandCSet_ = """" & _
                     ChrW(U_CURLY_OPENDQUOTE) & _
                     ChrW(U_CURLY_CLOSEDQUOTE)
@@ -557,3 +593,4 @@ Private Function ExpandCSet_(arg As String) As String
     End Select
 End Function 'ExpandCSet_
 '
+
