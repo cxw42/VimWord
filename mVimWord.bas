@@ -10,6 +10,7 @@ Attribute VB_Name = "mVimWord"
 '   2018-05-02  chrisw  Cleanup; fixed vmNonblankBackward; added ge, gE
 '   2018-05-04  chrisw  Changed paste behaviour per Word
 '   2018-05-07  chrisw  gp/gP now paste unformatted text; added ninja-feet
+'   2018-05-10  chrisw  Fixed whitespace classes used for text objects
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -19,7 +20,7 @@ Option Explicit
 Option Base 0
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.9, 2018-05-07.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.10, 2018-05-10.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -107,8 +108,29 @@ Private Sub vimRunCommand( _
     ninja As VimNinja _
 )
     Dim TITLE As String: TITLE = "Do Vim command"
-    Dim CSET_WS As String: CSET_WS = " " & Chr(9) & Chr(10) & Chr(12) & Chr(13)
+
+    Dim CSET_WS As String
+    CSET_WS = " " & ChrW(U_TAB) & ChrW(U_LF) & _
+        ChrW(W_LINE_BREAK) & ChrW(W_FUNKY_BREAK) & Chr(U_CR) & Chr(W_NBSP) & _
+        ChrW(&H1680) & ChrW(&H180E) & ChrW(&H2000) & ChrW(&H2001) & _
+        ChrW(&H2002) & ChrW(&H2003) & ChrW(&H2004) & ChrW(&H2005) & _
+        ChrW(&H2006) & ChrW(&H2007) & ChrW(&H2008) & ChrW(&H2009) & _
+        ChrW(&H200A) & ChrW(&H200B) & ChrW(&H202F) & ChrW(&H205F) & _
+        ChrW(&H3000) & ChrW(&HFEFF) & ChrW(&H2028) & ChrW(&H2029)
         ' NOT comment markers since I've been having problems with those lately
+
+    Dim CSET_WS_ONELINE As String ' Whitespace on a single line
+    CSET_WS_ONELINE = " " & ChrW(U_TAB) & Chr(W_NBSP) & _
+        ChrW(&H1680) & ChrW(&H180E) & ChrW(&H2000) & ChrW(&H2001) & _
+        ChrW(&H2002) & ChrW(&H2003) & ChrW(&H2004) & ChrW(&H2005) & _
+        ChrW(&H2006) & ChrW(&H2007) & ChrW(&H2008) & ChrW(&H2009) & _
+        ChrW(&H200A) & ChrW(&H200B) & ChrW(&H202F) & ChrW(&H205F) & _
+        ChrW(&H3000) & ChrW(&HFEFF)
+
+    Dim CSET_WS_BREAKS As String
+    CSET_WS_BREAKS = ChrW(U_LF) & _
+        ChrW(W_LINE_BREAK) & ChrW(W_FUNKY_BREAK) & Chr(U_CR) & _
+        ChrW(&H2028) & ChrW(&H2029)
 
     ' Sanity check: we can have an operator or a command, but not both.
     If (oper <> voUndef And cmd <> vcUndef) Or _
@@ -290,6 +312,9 @@ Private Sub vimRunCommand( _
         'Case vmScreenMiddle
         'Case vmScreenBottom
 
+        ' Text objects
+        ' ------------
+
         ' Non-collapsing ones
         Case vmAWord:
             proczone.Expand wdWord
@@ -307,8 +332,10 @@ Private Sub vimRunCommand( _
             proczone.MoveStartUntil CSET_WS, wdBackward
             For idx = 1 To count
                 proczone.MoveEndUntil CSET_WS, wdForward
-                proczone.MoveEndWhile CSET_WS, wdForward    ' aW includes the trailing WS
+                proczone.MoveEndWhile CSET_WS, wdForward
             Next idx
+            proczone.MoveEndWhile CSET_WS_BREAKS, wdBackward
+                ' aW includes the trailing WS, but don't grab the paragraph mark as well.
 
         Case vmINonblank:
             coll = False
@@ -323,6 +350,9 @@ Private Sub vimRunCommand( _
             proczone.Expand wdSentence
             coll = False
             If count > 1 Then proczone.MoveEnd wdSentence, count - 1
+            proczone.MoveEndWhile CSET_WS_BREAKS, wdBackward
+                ' So deleting the last sentence in the paragraph doesn't
+                ' remove the break between that paragraph and the next
 
         Case vmISentence:
             proczone.Expand wdSentence
@@ -338,7 +368,7 @@ Private Sub vimRunCommand( _
         Case vmIPara
             proczone.Expand wdParagraph
             If count > 1 Then proczone.MoveEnd wdParagraph, count - 1
-            proczone.MoveEndWhile CSET_WS, wdBackward
+            proczone.MoveEndWhile Chr(13), -1   ' Only the last Chr(13)
             coll = False
 
         Case Else:

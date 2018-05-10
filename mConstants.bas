@@ -1,14 +1,14 @@
 Attribute VB_Name = "mConstants"
 ' mConstants: Copyright (c) Chris White 2016--2018.
-'   2018/04/27  chrisw  Imported from Normal.dotm1
+'   2018/04/27  chrisw  Imported from Normal.dotm
 
 Option Explicit
 Option Base 0
 
 Public Enum CHARCODES
     U_TAB = &H9
-    U_LF = &HA
-    U_CR = &HD
+    U_LF = &HA              ' In Word, appears to be smashed to Chr(13).
+    U_CR = &HD              ' In Word, the end of a paragraph
     U_SPACE = &H20
     U_HYPHEN = &H2D         ' A regular hyphen (HYPHEN-MINUS)
     U_OPT_HYPHEN = &HAD     ' Optional hyphen, in Unicode (SOFT HYPHEN)
@@ -27,7 +27,15 @@ Public Enum CHARCODES
     U_WAVE_DASH = &H301C    ' Japanese figure dash
     U_FULLWIDTH_TILDE = &HFF5E  ' Alternative JP figure dash
 
-    W_COMMENT = &H5     ' the marker in the body of the text where a comment is
+    ' Word-specific constants
+    W_FOOTNOTE_MARK = 2 ' marker in the text for the footnote number - same code in
+                        ' both the main-text and footnote stories.
+    W_COMMENT = 5       ' the marker in the body of the text where a comment is
+    W_LINE_BREAK = 11   ' manual line-break
+    W_FUNKY_BREAK = 12  ' page break or section break - both are represented by the same char :(
+    W_FIELD_START = 19
+    W_FIELD_END = 21
+    
     W_NBHYPHEN = &H1E   ' non-breaking hyphen, MS Word
     W_OPTHYPHEN = &H1F  ' optional hyphen
     W_NBSP = &HA0
