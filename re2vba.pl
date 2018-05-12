@@ -39,10 +39,11 @@ sub stash_piece
 sub Main
 {
     # Args
-    my %opts = (dim=>true, quiet=>false);
+    my %opts = (dim=>true, private=>false, quiet=>false);
     GetOptions(\%opts,
         'usage|?', 'help|h', 'man',     # options we handle here
-        "dim!",   # whether to print declarations
+        "dim!",     # whether to print declarations
+        "private",  # if true, use Private instead of Dim.  Ignored if --nodim
         "quiet|q",
     )
     or pod2usage(-verbose => 0, -exitval => EXIT_PARAM_ERR);    # unknown opt
@@ -155,9 +156,11 @@ sub Main
         $name = uc $name;
         $name =~ s{[^a-zA-Z0-9]}{_}g;
         $names{$idx} = $name;
-        say ' ' x 4, "Dim RESM_$name As Long" if $opts{dim};
+        say(($opts{private} ? 'Private ' : (' ' x 4) . 'Dim '),
+            "RESM_$name As Long") if $opts{dim};
     }
-    say ' ' x 4, "Dim RE_PAT As String" if $opts{dim};
+    say(($opts{private} ? 'Private ' : (' ' x 4) . 'Dim '),
+        "RE_PAT As String") if $opts{dim};
 
     # Print the regex, with lines broken
     say "\n", ' ' x 4, "RE_PAT = _";
