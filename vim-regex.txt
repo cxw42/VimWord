@@ -9,8 +9,8 @@ main        ^(  (?# Note: registers not yet implemented)
                 (?<count1>[1-9][0-9]*)?
                 (?:
                     (?<=intrans)
-                    |
-                    (?<=trans)
+                    |(?<=trans)
+                    |(?<=trans-abbr)
                 )
             )$
 
@@ -55,5 +55,9 @@ trans       (?<tverb>[cdyv])                (?# TVERB: what to do)
                 [fFtT](?<ttext>.)|          (?# Motions with an argument)
                 (?<=noarg-motion)
             )
+
+# Transitive abbreviations: x, ., ... .  These are the end of the entry --- 
+# nothing comes after them.
+trans-abbr  (?<tverbabbr>[xX\.])
 
 # vi: set ts=4 sts=4 sw=4 et ai ff=unix ft=sh: #

@@ -19,8 +19,14 @@ Attribute VB_Name = "mVimWord"
 Option Explicit
 Option Base 0
 
+' Storage for the last command, to support `.`.  This only lasts until
+' the next time the VBA project is reset.
+' Public since it's used by frmGrabKeys; here so that it will stick around.
+Public VimLastCommand_ As String
+'
+
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.10, 2018-05-10.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.11, 2018-05-12.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About

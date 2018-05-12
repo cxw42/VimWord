@@ -22,6 +22,7 @@ Attribute VB_Exposed = False
 '   2018-04-26  chrisw  Changed regex from hand-generated to re2vba.pl
 '   2018-05-02  chrisw  Refactored motion code into ProcessMotion_
 '   2018-05-07  chrisw  Added ninja-feet; refactored regex
+'   2018-05-12  chrisw  Added x X .
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -85,6 +86,8 @@ Public Enum VimCommand      ' Intransitive commands
 ' thanks to https://www.fprintf.net/vimCheatSheet.html and :help change.txt
 
     vcUndef
+    
+    vcRepeat        ' .
 
     ' Note: intransitive motions (e.g., 0, ^, $) are handled with a fake operator voGo.
     'vcAppend       ' a
@@ -95,9 +98,7 @@ Public Enum VimCommand      ' Intransitive commands
     'vcOpen         ' o
     'vcOpenAbove    ' O
 
-    'vcDelAfter     ' x
-    'vcDelBefore    ' X
-    ' TODO D, C, s, S
+    ' TODO D, C, s, S - here, or by remapping.
 
     ' TODO implement registers
 
@@ -299,6 +300,8 @@ Public VMotionCount As Long
 Public VArg As String
 Public VNinja As VimNinja
 
+Private DotCount_ As Long   ' Count on a `.`
+
 ' Regexp
 Private RE_ACT As VBScript_RegExp_55.RegExp
 
@@ -310,10 +313,11 @@ Private RESM_ITEXT As Long
 Private RESM_TVERB As Long
 Private RESM_COUNT2 As Long
 Private RESM_TARGET As Long
-Private RESM_TOBJ_RANGE As Long
 Private RESM_NINJA As Long
+Private RESM_TOBJ_RANGE As Long
 Private RESM_OBJTYPE As Long
 Private RESM_TTEXT As Long
+Private RESM_TVERBABBR As Long
 Private RE_PAT As String
 '
 
@@ -328,6 +332,8 @@ Private Sub UserForm_Initialize()
     VArg = ""
     VNinja = vnUndef
 
+    DotCount_ = 1
+    
     Dim RE_PAT As String
 
     ' === Build up the regex ===
@@ -335,11 +341,12 @@ Private Sub UserForm_Initialize()
     ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
 
+
     RE_PAT = _
         "^(([1-9][0-9]*)?((([HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$" & _
         "]|[fFtT](.))|(gW)?g?[\*#]|g?[pP])|([cdyv])([1-9][0-9]*)?(([\" & _
         "[\]])?([ai])([wWsp])|[fFtT](.)|[HMLGhjklwbWB\x28\x29\x7b\x7d" & _
-        "]|g?[eE0\^\$])))$" & _
+        "]|g?[eE0\^\$])|([xX\.])))$" & _
         ""
     RESM_COUNT1 = 1
     RESM_IVERB = 3
@@ -352,6 +359,7 @@ Private Sub UserForm_Initialize()
     RESM_TOBJ_RANGE = 11
     RESM_OBJTYPE = 12
     RESM_TTEXT = 13
+    RESM_TVERBABBR = 14
 
     ' === End of generated code ===
 
@@ -444,10 +452,15 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     VArg = ""
     VNinja = vnUndef
 
+    ' Don't change DotCount_, which is set by Update()
+    
+    ' Internal variables so we can alias, e.g., `x` to `dl`
+    Dim tverb As Variant: tverb = hit.SubMatches(RESM_TVERB)
+    Dim target As Variant: target = hit.SubMatches(RESM_TARGET)
+    
     ' Special-case "0" in code so that I don't have to special-case it in the
     ' regex.  A non-empty count preceding a "0" command means that the "0"
     ' should actually be part of the count, so wait for more keys.
-
     If (Not IsEmpty(hit.SubMatches(RESM_COUNT1))) And _
         (hit.SubMatches(RESM_IMOTION) = "0") _
     Then        ' ^ Empty decays to ""
@@ -462,10 +475,33 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
         VOperatorCount = CLng(hit.SubMatches(RESM_COUNT1))
     End If
 
+    If Not IsEmpty(hit.SubMatches(RESM_TVERBABBR)) Then      ' transitive, abbreviated
+        Select Case hit.SubMatches(RESM_TVERBABBR)
+            ' `.`: succeed early - VCommand and VOperatorCount are the only things that matter
+            Case ".":
+                VCommand = vcRepeat
+                DotCount_ = VOperatorCount
+                ProcessHit_ = True
+                Exit Function
+            
+            ' `x`: alias to `dl`
+            Case "x": tverb = "d": target = "l"
+                
+            ' `X`: alias to `dh`
+            Case "X": tverb = "d": target = "h"
+                
+            Case Else: Exit Function
+        End Select
+    End If
+    
+    ' Apply the dot count, if any
+    VOperatorCount = VOperatorCount * DotCount_
+    DotCount_ = 1
+    
     If Not IsEmpty(hit.SubMatches(RESM_IVERB)) Then     ' intransitive
 
-        'Debug.Print "Intransit.", IIf(IsEmpty(hit.SubMatches(RESM_IMOTION)), "-", hit.SubMatches(RESM_IMOTION)), _
-        '                            hit.SubMatches(RESM_IVERB), hit.SubMatches(RESM_ITEXT)
+        Debug.Print "Intransit.", IIf(IsEmpty(hit.SubMatches(RESM_IMOTION)), "-", hit.SubMatches(RESM_IMOTION)), _
+                                    hit.SubMatches(RESM_IVERB), hit.SubMatches(RESM_ITEXT)
 
         If Not IsEmpty(hit.SubMatches(RESM_IMOTION)) Then
             If ProcessMotion_(hit.SubMatches(RESM_IMOTION)) Then
@@ -504,12 +540,12 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             End Select
         End If 'a motion else
 
-    ElseIf Not IsEmpty(hit.SubMatches(RESM_TVERB)) Then     ' transitive
+    ElseIf Not IsEmpty(tverb) Then     ' transitive
 
-        'Debug.Print "Transitive", hit.SubMatches(RESM_TVERB), hit.SubMatches(RESM_COUNT2), Left(hit.SubMatches(RESM_TARGET), 1), hit.SubMatches(RESM_OBJTYPE), hit.SubMatches(RESM_TTEXT)
+        Debug.Print "Transitive", tverb, hit.SubMatches(RESM_COUNT2), Left(target, 1), hit.SubMatches(RESM_OBJTYPE), hit.SubMatches(RESM_TTEXT)
 
         ' Operator
-        Select Case hit.SubMatches(RESM_TVERB)
+        Select Case tverb
             Case "c": VOperator = voChange
             Case "d": VOperator = voDelete
             Case "y": VOperator = voYank
@@ -525,7 +561,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
         End If
 
         ' Process the motion
-        If ProcessMotion_(hit.SubMatches(RESM_TARGET)) Then         ' Motion without argument
+        If ProcessMotion_(CStr(target)) Then         ' Motion without argument
             ' Nothing more to do
 
         ElseIf Not IsEmpty(hit.SubMatches(RESM_TOBJ_RANGE)) Then    ' Text object
@@ -556,7 +592,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             End If
 
         Else ' Not a text object, so it's a motion with argument
-            Select Case Left(hit.SubMatches(RESM_TARGET), 1)
+            Select Case Left(target, 1)
                 Case "f": VMotion = vmCharForward: VArg = hit.SubMatches(RESM_TTEXT)
                 Case "F": VMotion = vmCharBackward: VArg = hit.SubMatches(RESM_TTEXT)
                 Case "t": VMotion = vmTilForward: VArg = hit.SubMatches(RESM_TTEXT)
@@ -579,24 +615,40 @@ End Function ' ProcessHit_
 
 Private Sub Update()
     Dim done As Boolean: done = False
+    Dim times_through As Long: times_through = 0    'deadman
+    
     lblKeys.Caption = Keys
 
     ' parse Vim commands to see if one is done
     Dim matches As VBScript_RegExp_55.MatchCollection
     Dim hit As VBScript_RegExp_55.Match
 
-    Set matches = RE_ACT.Execute(Keys)
-    If matches.count > 0 Then
-        Do 'Once
-            Set hit = matches.Item(0)
-            If hit.SubMatches.count < 1 Then Exit Do
-            Debug.Print "Matched:", hit.Value
+    DotCount_ = 1   ' In case we have a . this time
+    
+    Do
+        Debug.Print "Checking -" & CStr(Keys) & "-"
+        
+        times_through = times_through + 1
+        Set matches = RE_ACT.Execute(Keys)
+        If matches.count < 1 Then Exit Do
 
-            done = ProcessHit_(hit)
-            'If done Then Debug.Print "", "operator count:", VOperatorCount
-        Loop While False
+        Set hit = matches.Item(0)
+        If hit.SubMatches.count < 1 Then Exit Do
+        Debug.Print "Matched:", hit.Value
+
+        done = ProcessHit_(hit)     ' Assigns DotCount_ on a `.`
+        'If done Then Debug.Print "", "operator count:", VOperatorCount
+        
+        If done And (VCommand = vcRepeat) And Len(VimLastCommand_) > 0 Then
+            Keys = VimLastCommand_
+            done = False    ' process it next time through the loop
+        End If
+        
+    Loop Until done Or (times_through >= 2)
+    
+    If done Then
+        If VCommand <> vcRepeat Then VimLastCommand_ = Keys
+        Me.Hide
     End If
-
-    If done Then Me.Hide
 End Sub 'Update
 
