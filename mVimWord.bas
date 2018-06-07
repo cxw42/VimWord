@@ -11,6 +11,7 @@ Attribute VB_Name = "mVimWord"
 '   2018-05-04  chrisw  Changed paste behaviour per Word
 '   2018-05-07  chrisw  gp/gP now paste unformatted text; added ninja-feet
 '   2018-05-10  chrisw  Fixed whitespace classes used for text objects
+'   2018-06-07  chrisw  Hack in voDelete/voChange for strange Word behaviour.
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -26,7 +27,7 @@ Public VimLastCommand_ As String
 '
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.11, 2018-05-12.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.12, 2018-06-07.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -73,7 +74,8 @@ Private Sub VDCInternal(LoopIt As Boolean)
         Dim cmdstr As String: cmdstr = ""
         Dim arg As String: arg = ""
         Dim ninja As VimNinja: ninja = vnUndef
-
+        Dim space As Boolean: space = False
+        
         If Not frm.WasCancelled Then
             cmdstr = frm.Keys
             oper = frm.VOperator
@@ -83,13 +85,14 @@ Private Sub VDCInternal(LoopIt As Boolean)
             motionc = frm.VMotionCount
             arg = frm.VArg
             ninja = frm.VNinja
+            space = frm.VSpace
         End If
 
         Unload frm
         Set frm = Nothing
         If (cmd <> vcUndef) Or (oper <> voUndef And motion <> vmUndef) Then
             vimRunCommand doc, proczone, coll, atStart, oper, cmd, motion, _
-                operc, motionc, cmdstr, arg, ninja
+                operc, motionc, cmdstr, arg, ninja, space
             Application.ScreenRefresh
         End If
 
@@ -111,7 +114,8 @@ Private Sub vimRunCommand( _
     motionc As Long, _
     cmdstr As String, _
     arg As String, _
-    ninja As VimNinja _
+    ninja As VimNinja, _
+    space As Boolean _
 )
     Dim TITLE As String: TITLE = "Do Vim command"
 
@@ -388,7 +392,14 @@ Private Sub vimRunCommand( _
         Case vnRight
             proczone.Start = origpzstart
     End Select
-
+    
+    ' Extra whitespace.  Takes effect after ninja-feet.
+    If space And (colldir = wdCollapseEnd) Then
+        proczone.MoveEndWhile CSET_WS_ONELINE, wdForward
+    ElseIf space And (colldir = wdCollapseStart) Then
+        proczone.MoveStartWhile CSET_WS_ONELINE, wdBackward
+    End If
+    
     ' === Operator/Command ==================================================
 
     ' Process it.  We have either an operator or a command.
@@ -400,12 +411,25 @@ Private Sub vimRunCommand( _
                 If proczone.Start <> proczone.End Then proczone.Copy
                 GoTo VRC_Finally
 
-            Case voDelete:
-                If proczone.Start <> proczone.End Then proczone.Cut
+            Case voDelete, voChange:
+                If proczone.Start <> proczone.End Then
+                    ' Word doesn't always delete the whole selection!
+                    Dim endr As Range
+                    Set endr = proczone.Duplicate
+                    endr.Collapse wdCollapseEnd
+                    endr.MoveEnd wdCharacter, 1
+                    
+                    proczone.Cut
+                    
+                    If endr.Characters.count > 1 Then     ' something strange happened
+                        If endr.Characters.First = ChrW(13) Then
+                            endr.End = endr.Start + 1
+                            endr.Delete
+                        End If
+                    End If
+                        
+                End If
                 GoTo VRC_Finally
-
-            Case voChange:
-                If proczone.Start <> proczone.End Then proczone.Cut
 
             ' voGo, voSelect handled below
         End Select 'operator

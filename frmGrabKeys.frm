@@ -23,6 +23,10 @@ Attribute VB_Exposed = False
 '   2018-05-02  chrisw  Refactored motion code into ProcessMotion_
 '   2018-05-07  chrisw  Added ninja-feet; refactored regex
 '   2018-05-12  chrisw  Added x X .
+'   2018-06-07  chrisw  Added VSpace.  Also, changed IsEmpty checks to
+'                       Len>0 checks.  I had a situation in which a non-match
+'                       returned "" rather than Empty.
+'                       Added special-case code for 0 after nonempty count2.
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -299,6 +303,7 @@ Public VOperatorCount As Long
 Public VMotionCount As Long
 Public VArg As String
 Public VNinja As VimNinja
+Public VSpace As Boolean
 
 Private DotCount_ As Long   ' Count on a `.`
 
@@ -306,7 +311,9 @@ Private DotCount_ As Long   ' Count on a `.`
 Private RE_ACT As VBScript_RegExp_55.RegExp
 
 ' Submatch numbers - see vim-regex.txt
+Private RESM_SPACEONE As Long
 Private RESM_COUNT1 As Long
+Private RESM_SPACETWO As Long
 Private RESM_IVERB As Long
 Private RESM_IMOTION As Long
 Private RESM_ITEXT As Long
@@ -331,7 +338,8 @@ Private Sub UserForm_Initialize()
     VMotionCount = 1
     VArg = ""
     VNinja = vnUndef
-
+    VSpace = False
+    
     DotCount_ = 1
     
     Dim RE_PAT As String
@@ -341,25 +349,26 @@ Private Sub UserForm_Initialize()
     ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
 
-
     RE_PAT = _
-        "^(([1-9][0-9]*)?((([HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$" & _
-        "]|[fFtT](.))|(gW)?g?[\*#]|g?[pP])|([cdyv])([1-9][0-9]*)?(([\" & _
-        "[\]])?([ai])([wWsp])|[fFtT](.)|[HMLGhjklwbWB\x28\x29\x7b\x7d" & _
-        "]|g?[eE0\^\$])|([xX\.])))$" & _
+        "^(([ ]?)([1-9][0-9]*)?(([ ]?)(([HMLGhjklwbWB\x28\x29\x7b\x7d" & _
+        "]|g?[eE0\^\$]|[fFtT](.))|(gW)?g?[\*#]|g?[pP])|([cdyv])([1-9]" & _
+        "[0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT](.)|[HMLGhjklwbWB\x28" & _
+        "\x29\x7b\x7d]|g?[eE0\^\$])|([xX\.])))$" & _
         ""
-    RESM_COUNT1 = 1
-    RESM_IVERB = 3
-    RESM_IMOTION = 4
-    RESM_ITEXT = 5
-    RESM_TVERB = 7
-    RESM_COUNT2 = 8
-    RESM_TARGET = 9
-    RESM_NINJA = 10
-    RESM_TOBJ_RANGE = 11
-    RESM_OBJTYPE = 12
-    RESM_TTEXT = 13
-    RESM_TVERBABBR = 14
+    RESM_SPACEONE = 1
+    RESM_COUNT1 = 2
+    RESM_SPACETWO = 4
+    RESM_IVERB = 5
+    RESM_IMOTION = 6
+    RESM_ITEXT = 7
+    RESM_TVERB = 9
+    RESM_COUNT2 = 10
+    RESM_TARGET = 11
+    RESM_NINJA = 12
+    RESM_TOBJ_RANGE = 13
+    RESM_OBJTYPE = 14
+    RESM_TTEXT = 15
+    RESM_TVERBABBR = 16
 
     ' === End of generated code ===
 
@@ -451,7 +460,8 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     VMotionCount = 1
     VArg = ""
     VNinja = vnUndef
-
+    VSpace = False
+    
     ' Don't change DotCount_, which is set by Update()
     
     ' Internal variables so we can alias, e.g., `x` to `dl`
@@ -461,10 +471,16 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     ' Special-case "0" in code so that I don't have to special-case it in the
     ' regex.  A non-empty count preceding a "0" command means that the "0"
     ' should actually be part of the count, so wait for more keys.
-    If (Not IsEmpty(hit.SubMatches(RESM_COUNT1))) And _
-        (hit.SubMatches(RESM_IMOTION) = "0") _
+    If ((Len(hit.SubMatches(RESM_COUNT1)) > 0) And (hit.SubMatches(RESM_IMOTION) = "0")) Or _
+        ((Len(hit.SubMatches(RESM_COUNT2)) > 0) And (hit.SubMatches(RESM_TARGET) = "0")) _
     Then        ' ^ Empty decays to ""
         Exit Function
+    End If
+    
+    ' Check for <Space> indicators
+    If (Len(hit.SubMatches(RESM_SPACEONE)) > 0) Or _
+            (Len(hit.SubMatches(RESM_SPACETWO)) > 0) Then
+        VSpace = True
     End If
 
     ' Count before the command, if any
@@ -475,7 +491,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
         VOperatorCount = CLng(hit.SubMatches(RESM_COUNT1))
     End If
 
-    If Not IsEmpty(hit.SubMatches(RESM_TVERBABBR)) Then      ' transitive, abbreviated
+    If Len(hit.SubMatches(RESM_TVERBABBR)) > 0 Then     ' transitive, abbreviated
         Select Case hit.SubMatches(RESM_TVERBABBR)
             ' `.`: succeed early - VCommand and VOperatorCount are the only things that matter
             Case ".":
@@ -498,12 +514,12 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     VOperatorCount = VOperatorCount * DotCount_
     DotCount_ = 1
     
-    If Not IsEmpty(hit.SubMatches(RESM_IVERB)) Then     ' intransitive
+    If Len(hit.SubMatches(RESM_IVERB)) > 0 Then     ' intransitive
 
-        Debug.Print "Intransit.", IIf(IsEmpty(hit.SubMatches(RESM_IMOTION)), "-", hit.SubMatches(RESM_IMOTION)), _
+        Debug.Print "Intransit.", IIf(Len(hit.SubMatches(RESM_IMOTION)) = 0, "-", hit.SubMatches(RESM_IMOTION)), _
                                     hit.SubMatches(RESM_IVERB), hit.SubMatches(RESM_ITEXT)
 
-        If Not IsEmpty(hit.SubMatches(RESM_IMOTION)) Then
+        If Len(hit.SubMatches(RESM_IMOTION)) > 0 Then
             If ProcessMotion_(hit.SubMatches(RESM_IMOTION)) Then
                 VOperator = voGo
             Else
@@ -540,7 +556,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             End Select
         End If 'a motion else
 
-    ElseIf Not IsEmpty(tverb) Then     ' transitive
+    ElseIf Len(tverb) > 0 Then      ' transitive
 
         Debug.Print "Transitive", tverb, hit.SubMatches(RESM_COUNT2), Left(target, 1), hit.SubMatches(RESM_OBJTYPE), hit.SubMatches(RESM_TTEXT)
 
@@ -564,7 +580,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
         If ProcessMotion_(CStr(target)) Then         ' Motion without argument
             ' Nothing more to do
 
-        ElseIf Not IsEmpty(hit.SubMatches(RESM_TOBJ_RANGE)) Then    ' Text object
+        ElseIf Len(hit.SubMatches(RESM_TOBJ_RANGE)) > 0 Then        ' Text object
             Select Case hit.SubMatches(RESM_TOBJ_RANGE)
                 Case "a":
                     Select Case hit.SubMatches(RESM_OBJTYPE)
@@ -587,7 +603,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
                 Case Else: Exit Function
             End Select
 
-            If Not IsEmpty(hit.SubMatches(RESM_NINJA)) Then
+            If Len(hit.SubMatches(RESM_NINJA)) > 0 Then
                 VNinja = IIf(hit.SubMatches(RESM_NINJA) = "[", vnLeft, vnRight)
             End If
 
@@ -617,7 +633,7 @@ Private Sub Update()
     Dim done As Boolean: done = False
     Dim times_through As Long: times_through = 0    'deadman
     
-    lblKeys.Caption = Keys
+    lblKeys.Caption = Replace(Keys, " ", ChrW(&H2423))  ' Make spaces visible
 
     ' parse Vim commands to see if one is done
     Dim matches As VBScript_RegExp_55.MatchCollection

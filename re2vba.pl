@@ -197,6 +197,10 @@ re2vba.pl - Convert a Perl regex to a VBA implementation somewhat like that rege
 
 If given on the command line, do not print the C<Dim> statements.
 
+=item --private
+
+If given, use C<Private> instead of C<Dim>.
+
 =item -q, --quiet
 
 Do not print the diagnostic messages while running

@@ -4,15 +4,27 @@
 # Useful command line:
 # ./re2vba.pl --nodim vim-regex.txt |tee >(putclip)
 
+# Available normal-mode commands: at least Q (no Ex mode), U (Word doesn't
+# save undo information per line).
+
 # Main pattern
 main        ^(  (?# Note: registers not yet implemented)
+                (?<spaceone>[ ]?)
                 (?<count1>[1-9][0-9]*)?
                 (?:
+                    (?<spacetwo>[ ]?)
                     (?<=intrans)
                     |(?<=trans)
                     |(?<=trans-abbr)
                 )
             )$
+
+    # <Space> in <space-one> or <space-two> (or both; no cumulative
+    # effect) applied with an operator that will cause the motion to
+    # extend to include any further inline whitespace.  E.g., <Space>df,
+    # will delete to the following comma, and delete any spaces or tabs
+    # after that comma.  Likewise, <Space>db will delete one word
+    # backwards, and any inline whitespace before that word.
 
 # Motions that don't take arguments (although they may take counts).
 # A motion of "0" is special-cased in the parsing code to keep the regex
@@ -56,7 +68,7 @@ trans       (?<tverb>[cdyv])                (?# TVERB: what to do)
                 (?<=noarg-motion)
             )
 
-# Transitive abbreviations: x, ., ... .  These are the end of the entry --- 
+# Transitive abbreviations: x, ., ... .  These are the end of the entry ---
 # nothing comes after them.
 trans-abbr  (?<tverbabbr>[xX\.])
 
