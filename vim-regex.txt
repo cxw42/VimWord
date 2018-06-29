@@ -60,7 +60,7 @@ textobj     (?<ninja>[\[\]])?               (?# Ninja-feet marker)
             (?<objtype>[wWsp])              (?# Type of text object)
 
 # Transitive: verb, count, object, object type, text
-trans       (?<tverb>[cdyv])                (?# TVERB: what to do)
+trans       (?<tverb>[cdyvX])               (?# TVERB: what to do)
             (?<count2>[1-9][0-9]*)?         (?# Count after the operator)
             (?<target>                      (?# What to work on)
                 (?<=textobj)|               (?# Text objects)
@@ -70,6 +70,8 @@ trans       (?<tverb>[cdyv])                (?# TVERB: what to do)
 
 # Transitive abbreviations: x, ., ... .  These are the end of the entry ---
 # nothing comes after them.
-trans-abbr  (?<tverbabbr>[xX\.])
+# Note: I have repurposed `X` as delete-without-yank, so it is no longer
+# a synonym for `dh`.
+trans-abbr  (?<tverbabbr>[x\.])
 
 # vi: set ts=4 sts=4 sw=4 et ai ff=unix ft=sh: #

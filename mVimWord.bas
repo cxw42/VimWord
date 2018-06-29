@@ -12,6 +12,9 @@ Attribute VB_Name = "mVimWord"
 '   2018-05-07  chrisw  gp/gP now paste unformatted text; added ninja-feet
 '   2018-05-10  chrisw  Fixed whitespace classes used for text objects
 '   2018-06-07  chrisw  Hack in voDelete/voChange for strange Word behaviour.
+'   2018-06-26  chrisw  ip: don't select whole table cell.  It still doesn't
+'                       work with a count, though, and I'm not sure why.  E.g., 2vip
+'   2018-06-29  chrisw  Added voDrop; bugfix in ip
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -20,14 +23,15 @@ Attribute VB_Name = "mVimWord"
 Option Explicit
 Option Base 0
 
-' Storage for the last command, to support `.`.  This only lasts until
+' Storage for the last command, to support `.`.  NOTE: This only lasts until
 ' the next time the VBA project is reset.
-' Public since it's used by frmGrabKeys; here so that it will stick around.
+' Public since it's used by frmGrabKeys; here so that it will stick around
+' after a frmGrabKeys instance is unloaded.
 Public VimLastCommand_ As String
 '
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.12, 2018-06-07.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.14, 2018-06-29.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -378,6 +382,17 @@ Private Sub vimRunCommand( _
         Case vmIPara
             proczone.Expand wdParagraph
             If count > 1 Then proczone.MoveEnd wdParagraph, count - 1
+            
+            ' If we were in a table, the end marker is now selected.
+            ' The marker is a Chr(13) & Chr(7), but MoveEndWhile won't move
+            ' over it.  Therefore, test for it and skip it manually.
+            If proczone.Tables.count >= 1 Then
+                If proczone.Cells.count >= 1 Then
+                    If Right(proczone.Text, 1) = ChrW(7) Then
+                        proczone.MoveEnd wdCharacter, -1
+                    End If
+                End If
+            End If
             proczone.MoveEndWhile Chr(13), -1   ' Only the last Chr(13)
             coll = False
 
@@ -411,7 +426,7 @@ Private Sub vimRunCommand( _
                 If proczone.Start <> proczone.End Then proczone.Copy
                 GoTo VRC_Finally
 
-            Case voDelete, voChange:
+            Case voDelete, voChange, voDrop:
                 If proczone.Start <> proczone.End Then
                     ' Word doesn't always delete the whole selection!
                     Dim endr As Range
@@ -419,7 +434,11 @@ Private Sub vimRunCommand( _
                     endr.Collapse wdCollapseEnd
                     endr.MoveEnd wdCharacter, 1
                     
-                    proczone.Cut
+                    If oper = voDrop Then
+                        proczone.Delete
+                    Else
+                        proczone.Cut
+                    End If
                     
                     If endr.Characters.count > 1 Then     ' something strange happened
                         If endr.Characters.First = ChrW(13) Then

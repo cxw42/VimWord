@@ -27,6 +27,8 @@ Attribute VB_Exposed = False
 '                       Len>0 checks.  I had a situation in which a non-match
 '                       returned "" rather than Empty.
 '                       Added special-case code for 0 after nonempty count2.
+'   2018-06-29  chrisw  Changed X from `dh` to voDrop.
+'                       `dh` is still available if you need it.
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -155,6 +157,7 @@ Public Enum VimOperator
     voDelete        ' d
     voYank          ' y
     voSelect        ' v Select <motion>.
+    voDrop          ' X (Not in Vim): delete without yanking
 
     'voSwitchCase    ' ~/g~ unimpl
     ' TODO Maybe a custom titlecase on g~?
@@ -349,11 +352,12 @@ Private Sub UserForm_Initialize()
     ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
 
+
     RE_PAT = _
         "^(([ ]?)([1-9][0-9]*)?(([ ]?)(([HMLGhjklwbWB\x28\x29\x7b\x7d" & _
-        "]|g?[eE0\^\$]|[fFtT](.))|(gW)?g?[\*#]|g?[pP])|([cdyv])([1-9]" & _
-        "[0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT](.)|[HMLGhjklwbWB\x28" & _
-        "\x29\x7b\x7d]|g?[eE0\^\$])|([xX\.])))$" & _
+        "]|g?[eE0\^\$]|[fFtT](.))|(gW)?g?[\*#]|g?[pP])|([cdyvX])([1-9" & _
+        "][0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT](.)|[HMLGhjklwbWB\x2" & _
+        "8\x29\x7b\x7d]|g?[eE0\^\$])|([x\.])))$" & _
         ""
     RESM_SPACEONE = 1
     RESM_COUNT1 = 2
@@ -503,9 +507,6 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             ' `x`: alias to `dl`
             Case "x": tverb = "d": target = "l"
                 
-            ' `X`: alias to `dh`
-            Case "X": tverb = "d": target = "h"
-                
             Case Else: Exit Function
         End Select
     End If
@@ -516,8 +517,8 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     
     If Len(hit.SubMatches(RESM_IVERB)) > 0 Then     ' intransitive
 
-        Debug.Print "Intransit.", IIf(Len(hit.SubMatches(RESM_IMOTION)) = 0, "-", hit.SubMatches(RESM_IMOTION)), _
-                                    hit.SubMatches(RESM_IVERB), hit.SubMatches(RESM_ITEXT)
+        'Debug.Print "Intransit.", IIf(Len(hit.SubMatches(RESM_IMOTION)) = 0, "-", hit.SubMatches(RESM_IMOTION)), _
+        '                            hit.SubMatches(RESM_IVERB), hit.SubMatches(RESM_ITEXT)
 
         If Len(hit.SubMatches(RESM_IMOTION)) > 0 Then
             If ProcessMotion_(hit.SubMatches(RESM_IMOTION)) Then
@@ -558,7 +559,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
 
     ElseIf Len(tverb) > 0 Then      ' transitive
 
-        Debug.Print "Transitive", tverb, hit.SubMatches(RESM_COUNT2), Left(target, 1), hit.SubMatches(RESM_OBJTYPE), hit.SubMatches(RESM_TTEXT)
+        'Debug.Print "Transitive", tverb, hit.SubMatches(RESM_COUNT2), Left(target, 1), hit.SubMatches(RESM_OBJTYPE), hit.SubMatches(RESM_TTEXT)
 
         ' Operator
         Select Case tverb
@@ -566,6 +567,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             Case "d": VOperator = voDelete
             Case "y": VOperator = voYank
             Case "v": VOperator = voSelect      ' V, i.e., visual selection - just like in Vim.
+            Case "X": VOperator = voDrop        ' X, repurposed from Vim.
             Case Else: Exit Function
         End Select
 
@@ -642,7 +644,7 @@ Private Sub Update()
     DotCount_ = 1   ' In case we have a . this time
     
     Do
-        Debug.Print "Checking -" & CStr(Keys) & "-"
+        'Debug.Print "Checking -" & CStr(Keys) & "-"
         
         times_through = times_through + 1
         Set matches = RE_ACT.Execute(Keys)
@@ -650,7 +652,7 @@ Private Sub Update()
 
         Set hit = matches.Item(0)
         If hit.SubMatches.count < 1 Then Exit Do
-        Debug.Print "Matched:", hit.Value
+        'Debug.Print "Matched:", hit.Value
 
         done = ProcessHit_(hit)     ' Assigns DotCount_ on a `.`
         'If done Then Debug.Print "", "operator count:", VOperatorCount
