@@ -15,6 +15,10 @@ Attribute VB_Name = "mVimWord"
 '   2018-06-26  chrisw  ip: don't select whole table cell.  It still doesn't
 '                       work with a count, though, and I'm not sure why.  E.g., 2vip
 '   2018-06-29  chrisw  Added voDrop; bugfix in ip
+'   2018-07-16  chrisw  Fixed g$ to be (in effect) an abbreviation for ]ip.
+'                       (I think it's easier to remember than ]ip.)
+'                       Fixed the count on $ to operate line-by-line.
+'                       Added vmLine support.
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -31,7 +35,7 @@ Public VimLastCommand_ As String
 '
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.14, 2018-06-29.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.2.15, 2018-07-16.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -79,6 +83,7 @@ Private Sub VDCInternal(LoopIt As Boolean)
         Dim arg As String: arg = ""
         Dim ninja As VimNinja: ninja = vnUndef
         Dim space As Boolean: space = False
+        Dim has_count As Boolean: has_count = False
         
         If Not frm.WasCancelled Then
             cmdstr = frm.Keys
@@ -90,13 +95,14 @@ Private Sub VDCInternal(LoopIt As Boolean)
             arg = frm.VArg
             ninja = frm.VNinja
             space = frm.VSpace
+            has_count = (frm.VHasOperatorCount Or frm.VHasMotionCount)
         End If
 
         Unload frm
         Set frm = Nothing
         If (cmd <> vcUndef) Or (oper <> voUndef And motion <> vmUndef) Then
             vimRunCommand doc, proczone, coll, atStart, oper, cmd, motion, _
-                operc, motionc, cmdstr, arg, ninja, space
+                operc, motionc, cmdstr, arg, ninja, space, has_count
             Application.ScreenRefresh
         End If
 
@@ -119,7 +125,8 @@ Private Sub vimRunCommand( _
     cmdstr As String, _
     arg As String, _
     ninja As VimNinja, _
-    space As Boolean _
+    space As Boolean, _
+    has_count As Boolean _
 )
     Dim TITLE As String: TITLE = "Do Vim command"
 
@@ -196,20 +203,34 @@ Private Sub vimRunCommand( _
                 motion = vmStartOfLine, doc, proczone, colldir)
 
             If motion = vmEOL And count > 1 Then
-                proczone.MoveEnd wdParagraph, count - 1
+                Dim dummy_colldir As WdCollapseDirection
+                Set proczone = MoveVertical_(False, count - 1, False, doc, proczone, dummy_colldir)
+                Set proczone = moveHorizontal_(False, doc, proczone, dummy_colldir)
+                    ' Make sure we're at the end, since moving down doesn't necessarily
+                    ' keep us at EOL
             End If
 
-        Case vmStartOfParagraph: proczone.Start = proczone.Paragraphs(1).Range.Start: colldir = wdCollapseStart
-
-        Case vmEOParagraph:
+        Case vmStartOfParagraph:    ' 0 - special command
             proczone.Start = proczone.Paragraphs(1).Range.Start
-            colldir = wdCollapseEnd
-            If count > 1 Then
-                proczone.MoveEnd wdParagraph, count - 1
+            colldir = wdCollapseStart
+
+        Case vmLine
+            If Not has_count Then   ' G without a count => last line
+                proczone.MoveEnd wdStory
+                colldir = wdCollapseEnd
+                
+            Else
+                Dim linerange As Range
+                Set linerange = proczone.GoTo(What:=wdGoToLine, which:=wdGoToFirst, count:=count)
+                If linerange.Start < proczone.Start Then
+                    proczone.Start = linerange.Start
+                    colldir = wdCollapseStart
+                Else
+                    proczone.End = linerange.End
+                    colldir = wdCollapseEnd
+                End If
             End If
-
-        'TODO Case vmLine
-
+            
         Case vmCharForward:
             arg = ExpandCSet_(arg)
             colldir = wdCollapseEnd
@@ -379,8 +400,12 @@ Private Sub vimRunCommand( _
             coll = False
             If count > 1 Then proczone.MoveEnd wdParagraph, count - 1
 
-        Case vmIPara
+        Case vmIPara, vmEOParagraph
+            ' Include EOParagraph (g$) here to avoid duplicating code
+            
             proczone.Expand wdParagraph
+            If motion = vmEOParagraph Then proczone.Start = origpzstart
+            
             If count > 1 Then proczone.MoveEnd wdParagraph, count - 1
             
             ' If we were in a table, the end marker is now selected.
@@ -394,7 +419,7 @@ Private Sub vimRunCommand( _
                 End If
             End If
             proczone.MoveEndWhile Chr(13), -1   ' Only the last Chr(13)
-            coll = False
+            coll = (motion = vmEOParagraph)
 
         Case Else:
             If cmd = vcUndef Then GoTo VRC_Finally     ' Unimplemented is not an error
@@ -547,15 +572,15 @@ End Sub 'vimRunCommand
 Private Function MoveVertical_(isUp As Boolean, count As Long, _
                             atStart As Boolean, doc As Document, _
                             proczone As Range, _
-                            ByRef colldir As WdCollapseDirection) As Range
+                            ByRef colldir_out As WdCollapseDirection) As Range
 
     Dim r As Range
     Set r = proczone.Duplicate
     r.Select
 
-    colldir = IIf(atStart, wdCollapseStart, wdCollapseEnd)
+    colldir_out = IIf(atStart, wdCollapseStart, wdCollapseEnd)
     With doc.ActiveWindow.Selection
-        .Collapse colldir
+        .Collapse colldir_out
         If isUp Then .MoveUp wdLine, count Else .MoveDown wdLine, count
         If atStart Then r.Start = .Start Else r.End = .End
     End With
@@ -566,15 +591,15 @@ End Function 'MoveVertical_
 
 Private Function moveHorizontal_( _
                 goToStartOfLine As Boolean, doc As Document, _
-                proczone As Range, ByRef colldir As WdCollapseDirection)
+                proczone As Range, ByRef colldir_out As WdCollapseDirection)
 
     Dim r As Range
     Set r = proczone.Duplicate
     r.Select
 
-    colldir = IIf(goToStartOfLine, wdCollapseStart, wdCollapseEnd)
+    colldir_out = IIf(goToStartOfLine, wdCollapseStart, wdCollapseEnd)
     With doc.ActiveWindow.Selection
-        .Collapse colldir
+        .Collapse colldir_out
         If goToStartOfLine Then .HomeKey wdLine Else .EndKey wdLine
         If goToStartOfLine Then r.Start = .Start Else r.End = .End
     End With

@@ -29,6 +29,7 @@ Attribute VB_Exposed = False
 '                       Added special-case code for 0 after nonempty count2.
 '   2018-06-29  chrisw  Changed X from `dh` to voDrop.
 '                       `dh` is still available if you need it.
+'   2018-07-16  chrisw  Added VHas*Count to support G (vmLine)
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -303,7 +304,9 @@ Public VOperator As VimOperator
 Public VCommand As VimCommand
 Public VMotion As VimMotion
 Public VOperatorCount As Long
+Public VHasOperatorCount As Boolean
 Public VMotionCount As Long
+Public VHasMotionCount As Boolean
 Public VArg As String
 Public VNinja As VimNinja
 Public VSpace As Boolean
@@ -338,7 +341,9 @@ Private Sub UserForm_Initialize()
     VCommand = vcUndef
     VMotion = vmUndef
     VOperatorCount = 1
+    VHasOperatorCount = False
     VMotionCount = 1
+    VHasMotionCount = False
     VArg = ""
     VNinja = vnUndef
     VSpace = False
@@ -461,7 +466,9 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     VCommand = vcUndef
     VMotion = vmUndef
     VOperatorCount = 1
+    VHasOperatorCount = False
     VMotionCount = 1
+    VHasMotionCount = False
     VArg = ""
     VNinja = vnUndef
     VSpace = False
@@ -493,6 +500,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
         VOperatorCount = 1
     Else
         VOperatorCount = CLng(hit.SubMatches(RESM_COUNT1))
+        VHasOperatorCount = True
     End If
 
     If Len(hit.SubMatches(RESM_TVERBABBR)) > 0 Then     ' transitive, abbreviated
@@ -576,6 +584,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
             VMotionCount = 1
         Else
             VMotionCount = CLng(hit.SubMatches(RESM_COUNT2))
+            VHasMotionCount = True
         End If
 
         ' Process the motion
