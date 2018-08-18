@@ -39,12 +39,13 @@ sub stash_piece
 sub Main
 {
     # Args
-    my %opts = (dim=>true, private=>false, quiet=>false);
+    my %opts = (dim=>true, private=>false, quiet=>false, indent=>true);
     GetOptions(\%opts,
         'usage|?', 'help|h', 'man',     # options we handle here
         "dim!",     # whether to print declarations
         "private",  # if true, use Private instead of Dim.  Ignored if --nodim
         "quiet|q",
+        "indent!",  # if true, indent the output.
     )
     or pod2usage(-verbose => 0, -exitval => EXIT_PARAM_ERR);    # unknown opt
 
@@ -150,28 +151,30 @@ sub Main
     $full_regex =~ s{"}{""}g;
 
     # Process the definitions, and print them if desired
+    my $I = ($opts{indent} ? ' ' : '');     # indent string
+
     for(my $idx=0; $idx < $groupidx; ++$idx) {
         next unless exists $names{$idx};
         my $name = $names{$idx};
         $name = uc $name;
         $name =~ s{[^a-zA-Z0-9]}{_}g;
         $names{$idx} = $name;
-        say(($opts{private} ? 'Private ' : (' ' x 4) . 'Dim '),
+        say(($opts{private} ? 'Private ' : ($I x 4) . 'Dim '),
             "RESM_$name As Long") if $opts{dim};
     }
-    say(($opts{private} ? 'Private ' : (' ' x 4) . 'Dim '),
+    say(($opts{private} ? 'Private ' : ($I x 4) . 'Dim '),
         "RE_PAT As String") if $opts{dim};
 
     # Print the regex, with lines broken
-    say "\n", ' ' x 4, "RE_PAT = _";
+    say "\n", $I x 4, "RE_PAT = _";
     while($full_regex =~ m{(.{0,60})}g) {
-        say ' ' x 8, "\"$1\" & _" if $1;
+        say $I x 8, "\"$1\" & _" if $1;
     }
-    say ' ' x 8, "\"\"";
+    say $I x 8, "\"\"";
 
     # Print the submatch numbers
     for(my $idx=0; $idx < $groupidx; ++$idx) {
-        say ' ' x 4, "RESM_$names{$idx} = $idx" if exists $names{$idx};
+        say $I x 4, "RESM_$names{$idx} = $idx" if exists $names{$idx};
     }
 
     return 0;
@@ -203,7 +206,11 @@ If given, use C<Private> instead of C<Dim>.
 
 =item -q, --quiet
 
-Do not print the diagnostic messages while running
+Do not print the diagnostic messages while running.
+
+=item --noindent
+
+If given on the command line, do not indent the output.
 
 =back
 
