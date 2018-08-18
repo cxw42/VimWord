@@ -27,6 +27,8 @@ Public Enum CHARCODES
     U_WAVE_DASH = &H301C    ' Japanese figure dash
     U_FULLWIDTH_TILDE = &HFF5E  ' Alternative JP figure dash
 
+    U_PU1 = &H91        ' PRIVATE USE ONE
+    
     ' Word-specific constants
     W_FOOTNOTE_MARK = 2 ' marker in the text for the footnote number - same code in
                         ' both the main-text and footnote stories.

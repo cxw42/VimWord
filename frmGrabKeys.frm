@@ -30,6 +30,7 @@ Attribute VB_Exposed = False
 '   2018-06-29  chrisw  Changed X from `dh` to voDrop.
 '                       `dh` is still available if you need it.
 '   2018-07-16  chrisw  Added VHas*Count to support G (vmLine)
+'   2018-08-18  chrisw  Removed VimRegister enum; added register regex and VRegister
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -37,57 +38,57 @@ Option Explicit
 Option Base 0
 
 ' Vim support
-Public Enum VimRegister     ' from :help registers
-    vrUndef
-    vrUnnamed   ' "
-    vr0
-    vr1
-    vr2
-    vr3
-    vr4
-    vr5
-    vr6
-    vr7
-    vr8
-    vr9
-    vrSmallDelete   ' -
-    vrA
-    vrB
-    vrC
-    vrD
-    vrE
-    vrF
-    vrG
-    vrH
-    vrI
-    vrJ
-    vrK
-    vrL
-    vrM
-    vrN
-    vrO
-    vrP
-    vrQ
-    vrR
-    vrS
-    vrT
-    vrU
-    vrV
-    vrW
-    vrX
-    vrY
-    vrZ
-    vrColon
-    vrDot
-    vrFilename      ' %
-    vrLastFilename  ' #
-    vrExpression    ' =
-    vrClipboard     ' * Win clipboard; X selection
-    vrPlus          ' + Win clipboard; X clipboard
-    vrTilde         ' dropped text from last drag-and-drop
-    vrBlackHole     ' underscore
-    vrLastPattern   ' /
-End Enum 'VimRegister
+'Public Enum VimRegister     ' from :help registers
+'    vrUndef
+'    vrUnnamed   ' "
+'    vr0
+'    vr1
+'    vr2
+'    vr3
+'    vr4
+'    vr5
+'    vr6
+'    vr7
+'    vr8
+'    vr9
+'    vrSmallDelete   ' -
+'    vrA
+'    vrB
+'    vrC
+'    vrD
+'    vrE
+'    vrF
+'    vrG
+'    vrH
+'    vrI
+'    vrJ
+'    vrK
+'    vrL
+'    vrM
+'    vrN
+'    vrO
+'    vrP
+'    vrQ
+'    vrR
+'    vrS
+'    vrT
+'    vrU
+'    vrV
+'    vrW
+'    vrX
+'    vrY
+'    vrZ
+'    vrColon
+'    vrDot
+'    vrFilename      ' %
+'    vrLastFilename  ' #
+'    vrExpression    ' =
+'    vrClipboard     ' * Win clipboard; X selection
+'    vrPlus          ' + Win clipboard; X clipboard
+'    vrTilde         ' dropped text from last drag-and-drop
+'    vrBlackHole     ' underscore
+'    vrLastPattern   ' /
+'End Enum 'VimRegister
 
 Public Enum VimCommand      ' Intransitive commands
 ' thanks to https://www.fprintf.net/vimCheatSheet.html and :help change.txt
@@ -300,6 +301,9 @@ End Enum 'VimNinja
 
 Public WasCancelled As Boolean
 Public Keys As String
+
+' The parts of the received command
+Public VRegister As String      ' Note: uppercase registers not yet supported
 Public VOperator As VimOperator
 Public VCommand As VimCommand
 Public VMotion As VimMotion
@@ -317,6 +321,7 @@ Private DotCount_ As Long   ' Count on a `.`
 Private RE_ACT As VBScript_RegExp_55.RegExp
 
 ' Submatch numbers - see vim-regex.txt
+Private RESM_REGISTER As Long
 Private RESM_SPACEONE As Long
 Private RESM_COUNT1 As Long
 Private RESM_SPACETWO As Long
@@ -336,7 +341,8 @@ Private RE_PAT As String
 
 Private Sub UserForm_Initialize()
     WasCancelled = False
-    Keys = ""
+    Keys = vbNullString
+    VRegister = vbNullString
     VOperator = voUndef
     VCommand = vcUndef
     VMotion = vmUndef
@@ -344,7 +350,7 @@ Private Sub UserForm_Initialize()
     VHasOperatorCount = False
     VMotionCount = 1
     VHasMotionCount = False
-    VArg = ""
+    VArg = vbNullString
     VNinja = vnUndef
     VSpace = False
     
@@ -356,28 +362,28 @@ Private Sub UserForm_Initialize()
     ' The following code is from the output of `re2vba.pl --nodim vim-regex.txt`.
     ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
-
-
+    
     RE_PAT = _
-        "^(([ ]?)([1-9][0-9]*)?(([ ]?)(([HMLGhjklwbWB\x28\x29\x7b\x7d" & _
-        "]|g?[eE0\^\$]|[fFtT](.))|(gW)?g?[\*#]|g?[pP])|([cdyvX])([1-9" & _
-        "][0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT](.)|[HMLGhjklwbWB\x2" & _
-        "8\x29\x7b\x7d]|g?[eE0\^\$])|([x\.])))$" & _
+        "^((\""([0-9a-z]))?([ ]?)([1-9][0-9]*)?(([ ]?)(([HMLGhjklwbWB" & _
+        "\x28\x29\x7b\x7d]|g?[eE0\^\$]|[fFtT](.))|(gW)?g?[\*#]|g?[pP]" & _
+        ")|([cdyvX])([1-9][0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT](.)|" & _
+        "[HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$])|([x\.])))$" & _
         ""
-    RESM_SPACEONE = 1
-    RESM_COUNT1 = 2
-    RESM_SPACETWO = 4
-    RESM_IVERB = 5
-    RESM_IMOTION = 6
-    RESM_ITEXT = 7
-    RESM_TVERB = 9
-    RESM_COUNT2 = 10
-    RESM_TARGET = 11
-    RESM_NINJA = 12
-    RESM_TOBJ_RANGE = 13
-    RESM_OBJTYPE = 14
-    RESM_TTEXT = 15
-    RESM_TVERBABBR = 16
+    RESM_REGISTER = 2
+    RESM_SPACEONE = 3
+    RESM_COUNT1 = 4
+    RESM_SPACETWO = 6
+    RESM_IVERB = 7
+    RESM_IMOTION = 8
+    RESM_ITEXT = 9
+    RESM_TVERB = 11
+    RESM_COUNT2 = 12
+    RESM_TARGET = 13
+    RESM_NINJA = 14
+    RESM_TOBJ_RANGE = 15
+    RESM_OBJTYPE = 16
+    RESM_TTEXT = 17
+    RESM_TVERBABBR = 18
 
     ' === End of generated code ===
 
@@ -462,6 +468,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     ProcessHit_ = False
 
     ' Consistent values at the start
+    VRegister = vbNullString
     VOperator = voUndef
     VCommand = vcUndef
     VMotion = vmUndef
@@ -469,7 +476,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
     VHasOperatorCount = False
     VMotionCount = 1
     VHasMotionCount = False
-    VArg = ""
+    VArg = vbNullString
     VNinja = vnUndef
     VSpace = False
     
@@ -486,6 +493,10 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
         ((Len(hit.SubMatches(RESM_COUNT2)) > 0) And (hit.SubMatches(RESM_TARGET) = "0")) _
     Then        ' ^ Empty decays to ""
         Exit Function
+    End If
+    
+    If (Len(hit.SubMatches(RESM_REGISTER)) > 0) Then
+        VRegister = hit.SubMatches(RESM_REGISTER)
     End If
     
     ' Check for <Space> indicators
@@ -664,7 +675,7 @@ Private Sub Update()
         'Debug.Print "Matched:", hit.Value
 
         done = ProcessHit_(hit)     ' Assigns DotCount_ on a `.`
-        'If done Then Debug.Print "", "operator count:", VOperatorCount
+        'If done Then Debug.Print vbNullString, "operator count:", VOperatorCount
         
         If done And (VCommand = vcRepeat) And Len(VimLastCommand_) > 0 Then
             Keys = VimLastCommand_

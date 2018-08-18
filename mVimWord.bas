@@ -19,6 +19,7 @@ Attribute VB_Name = "mVimWord"
 '                       (I think it's easier to remember than ]ip.)
 '                       Fixed the count on $ to operate line-by-line.
 '                       Added vmLine support.
+'   2018-08-18  chrisw  Added basic register support to c, d, y, p
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -26,6 +27,12 @@ Attribute VB_Name = "mVimWord"
 
 Option Explicit
 Option Base 0
+
+' Scratchpad filename, lower case for comparison
+Private Const SCRATCHPAD_FN_LC = "vimwordscratchpad.dotm"
+
+' Cache for the document index of the open scratchpad.  Trust but verify.
+Private ScratchpadDocIndex_ As Long
 
 ' Storage for the last command, to support `.`.  NOTE: This only lasts until
 ' the next time the VBA project is reset.
@@ -35,7 +42,7 @@ Public VimLastCommand_ As String
 '
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.2.15, 2018-07-16.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.3.0-pre.1, 2018-08-18.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -74,19 +81,21 @@ Private Sub VDCInternal(LoopIt As Boolean)
         Set frm = New frmGrabKeys
         frm.Show
 
+        Dim reg As String: reg = vbNullString
         Dim oper As VimOperator: oper = voUndef
         Dim cmd As VimCommand: cmd = vcUndef
         Dim motion As VimMotion: motion = vmUndef
         Dim operc As Long: operc = 0
         Dim motionc As Long: motionc = 0
-        Dim cmdstr As String: cmdstr = ""
-        Dim arg As String: arg = ""
+        Dim cmdstr As String: cmdstr = vbNullString
+        Dim arg As String: arg = vbNullString
         Dim ninja As VimNinja: ninja = vnUndef
         Dim space As Boolean: space = False
         Dim has_count As Boolean: has_count = False
         
         If Not frm.WasCancelled Then
             cmdstr = frm.Keys
+            reg = frm.VRegister
             oper = frm.VOperator
             cmd = frm.VCommand
             motion = frm.VMotion
@@ -101,7 +110,7 @@ Private Sub VDCInternal(LoopIt As Boolean)
         Unload frm
         Set frm = Nothing
         If (cmd <> vcUndef) Or (oper <> voUndef And motion <> vmUndef) Then
-            vimRunCommand doc, proczone, coll, atStart, oper, cmd, motion, _
+            vimRunCommand doc, proczone, coll, atStart, reg, oper, cmd, motion, _
                 operc, motionc, cmdstr, arg, ninja, space, has_count
             Application.ScreenRefresh
         End If
@@ -117,6 +126,7 @@ Private Sub vimRunCommand( _
     proczone As Range, _
     coll As Boolean, _
     atStart As Variant, _
+    reg As String, _
     oper As VimOperator, _
     cmd As VimCommand, _
     motion As VimMotion, _
@@ -446,13 +456,19 @@ Private Sub vimRunCommand( _
     ' TODO merge operator and command enums, since they are mutually exclusive.
 
     If oper <> vcUndef Then     ' Operators
-        Select Case oper
-            Case voYank:
-                If proczone.Start <> proczone.End Then proczone.Copy
-                GoTo VRC_Finally
-
-            Case voDelete, voChange, voDrop:
-                If proczone.Start <> proczone.End Then
+    
+        If proczone.Start <> proczone.End Then  ' c d y X
+            Select Case oper
+                Case voYank:
+                    If reg = vbNullString Then
+                        proczone.Copy
+                    Else
+                        SaveRangeToRegister_ proczone, reg
+                    End If
+                    
+                    GoTo VRC_Finally
+    
+                Case voDelete, voChange, voDrop:
                     ' Word doesn't always delete the whole selection!
                     Dim endr As Range
                     Set endr = proczone.Duplicate
@@ -462,7 +478,12 @@ Private Sub vimRunCommand( _
                     If oper = voDrop Then
                         proczone.Delete
                     Else
-                        proczone.Cut
+                        If reg = vbNullString Then
+                            proczone.Cut
+                        Else
+                            SaveRangeToRegister_ proczone, reg
+                            proczone.Delete
+                        End If
                     End If
                     
                     If endr.Characters.count > 1 Then     ' something strange happened
@@ -471,12 +492,12 @@ Private Sub vimRunCommand( _
                             endr.Delete
                         End If
                     End If
-                        
-                End If
-                GoTo VRC_Finally
-
-            ' voGo, voSelect handled below
-        End Select 'operator
+                            
+                    GoTo VRC_Finally
+    
+                ' voGo, voSelect handled below
+            End Select 'operator
+        End If 'something is selected
 
         If (oper = voGo) And coll Then
             proczone.Collapse colldir
@@ -523,7 +544,7 @@ Private Sub vimRunCommand( _
                 ispaste = True: paste_backup = True: paste_plain = True
 
             Case Else: GoTo VRC_Finally
-        End Select
+        End Select 'cmd
 
         If issearch Then
             proczone.Select
@@ -534,21 +555,30 @@ Private Sub vimRunCommand( _
 
         ElseIf ispaste Then
             ' TODO implement counts
-            If Not paste_plain Then
-                proczone.Paste
-
+            
+            If reg <> vbNullString Then
+                ReplaceRangeFromRegister_ proczone, reg, (Not paste_plain)
             Else
-                ' PasteSpecial leaves the range collapsed at the end of
-                ' what was pasted.  Therefore, save/restore the start.
-                Dim pzstart As Long
-                pzstart = proczone.Start
-
-                proczone.PasteSpecial Link:=False, DataType:=20, Placement:=wdInLine, _
-                    DisplayAsIcon:=False    ' 20 = unformatted Unicode text
-
-                proczone.Start = pzstart
+                If Not paste_plain Then
+                    proczone.Paste
+                        ' Removes whatever is in the proczone, then adds the
+                        ' pasted text after the proczone.  Leaves the
+                        ' selection at the end of the pasted text.
+                    
+                Else
+                    ' PasteSpecial leaves the range collapsed at the end of
+                    ' what was pasted.  Therefore, save/restore the start.
+                    Dim pzstart As Long
+                    pzstart = proczone.Start
+    
+                    proczone.PasteSpecial Link:=False, DataType:=20, Placement:=wdInLine, _
+                        DisplayAsIcon:=False    ' 20 = unformatted Unicode text
+    
+                    proczone.Start = pzstart
+                End If
+                
             End If
-
+            
             proczone.Collapse IIf(paste_backup, wdCollapseStart, wdCollapseEnd)
             proczone.Select
 
@@ -698,3 +728,156 @@ Private Function ExpandCSet_(arg As String) As String
 End Function 'ExpandCSet_
 '
 
+Public Sub MarkScratchpadAsSaved_(Optional AlsoClose = False)
+    Dim idx As Long, t As Template, d As Document
+    
+    On Error Resume Next
+    
+    Set d = FindScratchpad_(True)
+    If Not (d Is Nothing) Then
+        d.Saved = True
+        If AlsoClose Then d.Close wdDoNotSaveChanges
+    End If
+    
+    ' Now handle the template itself
+    For idx = 1 To Templates.count
+        Set t = Templates(idx)
+        If LCase(t.Name) = SCRATCHPAD_FN_LC Then
+            t.Saved = True
+            ' I don't see a way to close the template itself.
+            Exit For
+        End If
+    Next idx
+End Sub 'MarkScratchpadAsSaved_
+'
+
+Public Function FindScratchpad_(Optional noerror As Boolean = False) As Document
+' The Templates collection is indexed by full name rather than name, so we have to iterate it.
+    Dim idx As Long: idx = -1
+    Dim t As Template, d As Document
+    
+    ' Check the cached document index
+    Set d = Nothing
+    On Error Resume Next
+    Set d = Documents(ScratchpadDocIndex_)
+    On Error GoTo 0
+    
+    If Not (d Is Nothing) Then
+        If LCase(d.Name) = SCRATCHPAD_FN_LC Then GoTo FS_GotDoc
+    End If
+    
+    ' If no luck, check all the open documents
+    For idx = 1 To Documents.count
+        Set d = Documents(idx)
+        If LCase(d.Name) = SCRATCHPAD_FN_LC Then GoTo FS_GotDoc
+    Next idx
+    
+    ' Failing that, check all the templates
+    For idx = 1 To Templates.count
+        Set t = Templates(idx)
+        If LCase(t.Name) = SCRATCHPAD_FN_LC Then GoTo FS_GotTemplate
+    Next idx
+    
+FS_Oops:
+
+    ' If we got here, we can't find the scratchpad.  Flag it so calling code is simpler.
+    If noerror Then
+        Set FindScratchpad_ = Nothing
+    Else
+        Err.Raise vbObjectError + 512 + 513, "VimWord.dotm", "Could not locate " & SCRATCHPAD_FN_LC & " - try reinstalling"
+    End If
+    
+    Exit Function
+
+FS_GotTemplate:     ' We found a template and need to open it as a document
+
+    Set d = t.OpenAsDocument
+    d.ActiveWindow.Visible = False      ' Hidden
+    d.Saved = True
+    
+    ' Just to be safe, don't assume the index of the new document is Documents.Count.
+    Dim d2 As Document
+    For idx = 1 To Documents.count
+        Set d2 = Documents(idx)
+        If d2.FullName = d.FullName Then GoTo FS_GotDoc
+    Next idx
+    
+    ' If we got here, we opened the document, but somehow couldn't find it.  Bail.
+    d.Close False
+    GoTo FS_Oops
+    
+FS_GotDoc:          ' We found an already-open document
+    Set FindScratchpad_ = d
+    If idx <> -1 Then ScratchpadDocIndex_ = idx
+    
+End Function 'FindScratchpad_
+'
+
+Private Function GetRegister_(reg As String) As Range
+    Set GetRegister_ = Nothing
+    
+    Dim sp As Document
+    Set sp = FindScratchpad_
+    
+    Dim paranum As Long
+    paranum = Asc(LCase(reg)) + 1
+    If paranum > 128 Then
+        Err.Raise vbObjectError + 512 + 514, "VimWord.dotm", _
+            "I don't understand register '" & reg & "' (para. number " & CStr(paranum) & ")."
+        Exit Function
+    End If
+
+    Dim retval As Range
+    Set retval = sp.Paragraphs(paranum).Range.Duplicate
+    retval.MoveEnd wdCharacter, -1      ' Not the Chr(13) at the end
+    
+    Set GetRegister_ = retval
+End Function 'GetRegister_
+'
+
+Private Sub SaveRangeToRegister_(proczone As Range, reg As String)
+    Dim source As Range
+    Set source = proczone.Duplicate
+    
+    Dim dest As Range
+    Set dest = GetRegister_(reg)
+    
+    If source.Characters.last = Chr(13) Then
+        ' Remember that the proczone ended with a Chr(13) since we can't
+        ' store the Chr(13) directly in the single paragraph the register
+        ' is allocated.
+        source.MoveEnd wdCharacter, -1
+        dest.FormattedText = source
+        dest.InsertAfter ChrW(U_PU1)
+        dest.MoveEnd wdCharacter, 1
+    Else
+        dest.FormattedText = source
+    End If
+    
+    MarkScratchpadAsSaved_  ' Don't save changes to disk
+End Sub 'SaveRangeToRegister_
+'
+
+Private Sub ReplaceRangeFromRegister_(proczone As Range, reg As String, formatted As Boolean)
+    Dim source As Range
+    Set source = GetRegister_(reg)
+    
+    Dim need_para As Boolean: need_para = False
+    
+    If source.Characters.last = ChrW(U_PU1) Then    ' The register ends with a paragraph mark
+        need_para = True
+        source.MoveEnd wdCharacter, -1      ' TODO check this for robustness in tables
+    End If
+    
+    If formatted Then
+        proczone.FormattedText = source
+    Else
+        proczone.Text = source.Text
+    End If
+    
+    If need_para Then
+        proczone.InsertAfter Chr(13)
+        proczone.MoveEnd wdCharacter, 1
+    End If
+End Sub 'ReplaceRangeFromRegister_
+'

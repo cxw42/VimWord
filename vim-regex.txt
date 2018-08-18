@@ -8,7 +8,8 @@
 # save undo information per line).
 
 # Main pattern
-main        ^(  (?# Note: registers not yet implemented)
+main        ^(
+                (\"(?<register>[0-9a-z]))?
                 (?<spaceone>[ ]?)
                 (?<count1>[1-9][0-9]*)?
                 (?:
@@ -19,6 +20,7 @@ main        ^(  (?# Note: registers not yet implemented)
                 )
             )$
 
+    # not in Vim:
     # <Space> in <space-one> or <space-two> (or both; no cumulative
     # effect) applied with an operator that will cause the motion to
     # extend to include any further inline whitespace.  E.g., <Space>df,
