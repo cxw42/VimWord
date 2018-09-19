@@ -31,6 +31,7 @@ Attribute VB_Exposed = False
 '                       `dh` is still available if you need it.
 '   2018-07-16  chrisw  Added VHas*Count to support G (vmLine)
 '   2018-08-18  chrisw  Removed VimRegister enum; added register regex and VRegister
+'   2018-09-19  chrisw  Added vmMSWordSelection
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -284,6 +285,7 @@ Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     'vmARevision
     'vmIRevision
 
+    vmMSWordSelection  ' Chr(13) as a motion, for want of a better choice.
 End Enum 'VimMotion
 '
 
@@ -363,11 +365,14 @@ Private Sub UserForm_Initialize()
     ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
     
+
+
     RE_PAT = _
         "^((\""([0-9a-z]))?([ ]?)([1-9][0-9]*)?(([ ]?)(([HMLGhjklwbWB" & _
-        "\x28\x29\x7b\x7d]|g?[eE0\^\$]|[fFtT](.))|(gW)?g?[\*#]|g?[pP]" & _
-        ")|([cdyvX])([1-9][0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT](.)|" & _
-        "[HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$])|([x\.])))$" & _
+        "\x28\x29\x7b\x7d]|g?[eE0\^\$]|\x0d|[fFtT](.))|(gW)?g?[\*#]|g" & _
+        "?[pP])|([cdyvX])([1-9][0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT" & _
+        "](.)|[HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$]|\x0d)|([x\.]" & _
+        ")))$" & _
         ""
     RESM_REGISTER = 2
     RESM_SPACEONE = 3
@@ -457,6 +462,7 @@ Private Function ProcessMotion_(motion As String) As Boolean
         'Case "g0": VMotion = vmStartOfParagraph     ' TODO decide what this should do
         'Case "g^": VMotion = vmStartOfLine          ' TODO decide what this should do
         Case "g$": VMotion = vmEOParagraph
+        Case Chr(13): VMotion = vmMSWordSelection
 
         Case Else: ProcessMotion_ = False
     End Select
@@ -651,6 +657,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
 End Function ' ProcessHit_
 '
 
+' Update the state based on Keys.  Called in response to a keypress.
 Private Sub Update()
     Dim done As Boolean: done = False
     Dim times_through As Long: times_through = 0    'deadman

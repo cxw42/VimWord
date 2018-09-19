@@ -9,7 +9,9 @@ piece3  (?<=piece1)text here to make it long(?<=piece2)(?:foo)?(bar)?
 #        (?<lastone>9+)\\(group separated from a backslash)     # dies
         (?<lastone>9+)\\.{0,0}(group separated from a backslash)
 piece2  ((?<upperalpha>[A-Z])(?<p2>something))\\a+
-        "[0-9]"
+        "[0-9]"|
+        another_option  (?#a comment)
+
 #baaad           \                                              # dies
 piece1  [a-z](?<p1>thing)  (?#comment!)
 

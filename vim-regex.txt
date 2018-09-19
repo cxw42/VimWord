@@ -38,8 +38,9 @@ noarg-motion    [HMLG
                 \x28\x29\x7b\x7d]|
                     (?# 28/29 are parens, move sentence )
                     (?# 7b/7d are braces, move paragraph )
-                g?[eE0\^\$]         (?# gw, gb, etc. are not motions.)
+                g?[eE0\^\$]|        (?# gw, gb, etc. are not motions.)
                 (?#  ^ Note: 0 is special-cased in the parsing code.)
+                \x0d    (?# <CR> at the end = "Current MS Word selection")
 
 # Intransitive, including motions.  These can take a count, namely ?<count1>.
 intrans     (?<iverb>
@@ -67,7 +68,7 @@ trans       (?<tverb>[cdyvX])               (?# TVERB: what to do)
             (?<target>                      (?# What to work on)
                 (?<=textobj)|               (?# Text objects)
                 [fFtT](?<ttext>.)|          (?# Motions with an argument)
-                (?<=noarg-motion)
+                (?<=noarg-motion)           (?# Motions without an arg)
             )
 
 # Transitive abbreviations: x, ., ... .  These are the end of the entry ---

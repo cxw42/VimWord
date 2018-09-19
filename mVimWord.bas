@@ -42,7 +42,7 @@ Public VimLastCommand_ As String
 '
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.3.0-pre.1, 2018-08-18.  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox "VimWord version 0.3.0-pre.2, 2018-09-19.  Copyright (c) 2018 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
@@ -431,7 +431,11 @@ Private Sub vimRunCommand( _
             proczone.MoveEndWhile Chr(13), -1   ' Only the last Chr(13)
             coll = (motion = vmEOParagraph)
 
-        Case Else:
+        Case vmMSWordSelection
+            If proczone.Start = proczone.End Then GoTo VRC_Finally
+                ' If nothing is selected, don't try to take action.
+            
+        Case Else
             If cmd = vcUndef Then GoTo VRC_Finally     ' Unimplemented is not an error
     End Select ' motion
 
@@ -881,3 +885,4 @@ Private Sub ReplaceRangeFromRegister_(proczone As Range, reg As String, formatte
     End If
 End Sub 'ReplaceRangeFromRegister_
 '
+
