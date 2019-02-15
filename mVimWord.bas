@@ -1,6 +1,6 @@
 Attribute VB_Name = "mVimWord"
 ' mVimWord
-' Copyright (c) Chris White 2018
+' Copyright (c) Chris White 2018--2019
 ' CC-BY-NC-SA 4.0, or any later version, at your option.
 ' Thanks to https://glts.github.io/2013/04/28/vim-normal-mode-grammar.html
 '   2018-04-06  chrisw  Initial version
@@ -20,6 +20,7 @@ Attribute VB_Name = "mVimWord"
 '                       Fixed the count on $ to operate line-by-line.
 '                       Added vmLine support.
 '   2018-08-18  chrisw  Added basic register support to c, d, y, p
+'   2019-02-14  chrisw  Switched Undo to cUndoWrapper for 2007 compatibility
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -176,13 +177,12 @@ Private Sub vimRunCommand( _
     origpzstart = proczone.Start
     origpzend = proczone.End
 
-    Dim undos As UndoRecord
-    Set undos = Application.UndoRecord
+    Dim undo As New cUndoWrapper
 
     ' Run the command
 
     On Error GoTo VRC_Err
-    undos.StartCustomRecord TITLE & ": " & cmdstr
+    undo.Start TITLE & ": " & cmdstr
     Application.ScreenUpdating = False
 
     Dim count As Long
@@ -593,8 +593,7 @@ Private Sub vimRunCommand( _
 VRC_Finally:
     On Error Resume Next    ' or else errors in the cleanup code cause infinite loops
     Application.ScreenUpdating = True
-    undos.EndCustomRecord
-    Exit Sub
+    Exit Sub    ' undo Class_Terminate automatically closes the custom undo record
 
 VRC_Err:
     MsgBox "Got error " & CStr(Err.Number) & ": " & vbCrLf & _
