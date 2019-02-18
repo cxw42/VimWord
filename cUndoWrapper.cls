@@ -14,7 +14,7 @@ Attribute VB_Exposed = False
 '   2019-02-14  chrisw  Added conditional-compilation guard for
 '                       Word 2007 compatibility.  On 2007,
 '                       this class is a no-op.
-' NOTE: not yet tested on Word 2010+
+'   2019-02-18  chrisw  nothrow in Class_Terminate; bugfix in Start
 
 Option Explicit
 Option Base 0
@@ -37,15 +37,23 @@ End Sub
 Public Sub Start(TITLE As String)
     If Not (undos_ Is Nothing) Then
         undos_.StartCustomRecord TITLE
+        am_i_recording_ = True
     End If
-    am_i_recording_ = True
 End Sub
 
 Private Sub Class_Terminate()
+    Dim was_i_recording As Boolean
+    
+    ' Reset am_i_recording_ first so we don't ever try to
+    ' close the group twice (not sure how we would, but just
+    ' to be safe...).
+    was_i_recording = am_i_recording_
+    am_i_recording_ = False
+    
+    On Error Resume Next
     If Not (undos_ Is Nothing) Then
-        If am_i_recording_ And undos_.IsRecordingCustomRecord Then
+        If was_i_recording And undos_.IsRecordingCustomRecord Then
             undos_.EndCustomRecord
-            am_i_recording_ = False
         End If
     End If
 End Sub

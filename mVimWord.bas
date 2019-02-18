@@ -33,7 +33,7 @@ Option Explicit
 Option Base 0
 
 ' Version info
-Private Const VIMWORD_VERSION = "0.3.1"
+Private Const VIMWORD_VERSION = "0.3.2"
 Private Const VIMWORD_DATE = "2019-02-18"
 
 ' Scratchpad filename, lower case for comparison
