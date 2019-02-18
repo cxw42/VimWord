@@ -22,6 +22,8 @@ Attribute VB_Name = "mVimWord"
 '   2018-08-18  chrisw  Added basic register support to c, d, y, p
 '   2019-02-14  chrisw  Switched Undo to cUndoWrapper for 2007 compatibility
 '   2019-02-08  chrisw  Added VIMWORD_* version constants.
+'                       Added LastViewType_ material: switch to Normal view
+'                       before any use of Range.Move{Start,End}{While,Until} (#7).
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -47,8 +49,13 @@ Private ScratchpadDocIndex_ As Long
 Public VimLastCommand_ As String
 '
 
+' Storage for the view, in case we need to switch to Normal.
+Dim LastViewType_ As WdViewType
+Dim DidStashView_ As Boolean
+'
+
 Public Sub VimDoCommand_About()
-    MsgBox SPrintF("VimWord version %s (%s).  Copyright (c) 2018 Christopher White.  " & _
+    MsgBox SPrintF("VimWord version %s (%s).  Copyright (c) 2018--2019 Christopher White.  " & _
             "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later)." & vbCrLf & _
             "Uses code by Phlip Bradbury <phlipping@yahoo.com>.", _
             VIMWORD_VERSION, VIMWORD_DATE), _
@@ -72,6 +79,8 @@ Private Sub VDCInternal(LoopIt As Boolean)
 
     Dim stay_in_normal As Boolean: stay_in_normal = False
 
+    DidStashView_ = False
+    
     Do
         Dim proczone As Range, coll As Boolean, atStart As Variant
         atStart = Empty
@@ -127,6 +136,12 @@ Private Sub VDCInternal(LoopIt As Boolean)
         ' TODO expand this list in the future.
         stay_in_normal = (oper = voDelete) Or (oper = voYank)
     Loop While LoopIt And stay_in_normal
+    
+    ' Restore the view if we changed it
+    If DidStashView_ Then
+        doc.ActiveWindow.View = LastViewType_
+    End If
+    
 End Sub 'VDCInternal
 
 Private Sub vimRunCommand( _
@@ -249,6 +264,7 @@ Private Sub vimRunCommand( _
             End If
             
         Case vmCharForward:
+            ViewToNormal_ doc
             arg = ExpandCSet_(arg)
             colldir = wdCollapseEnd
             For idx = 1 To count
@@ -257,6 +273,7 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmCharBackward:
+            ViewToNormal_ doc
             arg = ExpandCSet_(arg)
             colldir = wdCollapseStart
             For idx = 1 To count
@@ -265,6 +282,7 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmTilForward:
+            ViewToNormal_ doc
             arg = ExpandCSet_(arg)
             colldir = wdCollapseEnd
             result = proczone.MoveEndUntil(arg, wdForward)
@@ -275,6 +293,7 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmTilBackward:
+            ViewToNormal_ doc
             arg = ExpandCSet_(arg)
             colldir = wdCollapseStart
             result = proczone.MoveStartUntil(arg, wdBackward)
@@ -289,6 +308,7 @@ Private Sub vimRunCommand( _
             proczone.MoveEnd wdWord, count
 
         Case vmEOWordForward:
+            ViewToNormal_ doc
             colldir = wdCollapseEnd
             proczone.MoveEnd wdWord, count
             proczone.MoveEndWhile CSET_WS, wdBackward
@@ -298,6 +318,7 @@ Private Sub vimRunCommand( _
             proczone.MoveStart wdWord, -count
 
         Case vmEOWordBackward:      ' ge
+            ViewToNormal_ doc
             colldir = wdCollapseEnd
             proczone.MoveStart wdWord, -count
             ltmp = proczone.End
@@ -308,6 +329,7 @@ Private Sub vimRunCommand( _
             proczone.End = ltmp
 
         Case vmNonblankForward:
+            ViewToNormal_ doc
             colldir = wdCollapseEnd
             For idx = 1 To count
                 proczone.MoveEndUntil CSET_WS, wdForward
@@ -315,6 +337,7 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmEONonblankForward:
+            ViewToNormal_ doc
             colldir = wdCollapseEnd
             proczone.MoveEndUntil CSET_WS, wdForward
             For idx = 2 To count
@@ -323,8 +346,9 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmNonblankBackward:
+            ViewToNormal_ doc
             colldir = wdCollapseStart
-
+            
             ' TODO handle failures (MoveStartUntil returns 0).  Move to
             ' beginning of paragraph?  Likewise, handle errors in
             ' all other MoveStart/MoveEnd calls throughout.
@@ -337,6 +361,7 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmEONonblankBackward:  'gE
+            ViewToNormal_ doc
             colldir = wdCollapseEnd
 
             For idx = 1 To count - 1
@@ -374,12 +399,14 @@ Private Sub vimRunCommand( _
             If count > 1 Then proczone.MoveEnd wdWord, count - 1
 
         Case vmIWord:
+            ViewToNormal_ doc
             proczone.Expand wdWord
             coll = False
             If count > 1 Then proczone.MoveEnd wdWord, count - 1
             proczone.MoveEndWhile CSET_WS, wdBackward
 
         Case vmANonblank:
+            ViewToNormal_ doc
             coll = False
             proczone.MoveStartUntil CSET_WS, wdBackward
             For idx = 1 To count
@@ -390,6 +417,7 @@ Private Sub vimRunCommand( _
                 ' aW includes the trailing WS, but don't grab the paragraph mark as well.
 
         Case vmINonblank:
+            ViewToNormal_ doc
             coll = False
             proczone.MoveStartUntil CSET_WS, wdBackward
             proczone.MoveEndUntil CSET_WS, wdForward
@@ -399,6 +427,7 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmASentence:
+            ViewToNormal_ doc
             proczone.Expand wdSentence
             coll = False
             If count > 1 Then proczone.MoveEnd wdSentence, count - 1
@@ -407,6 +436,7 @@ Private Sub vimRunCommand( _
                 ' remove the break between that paragraph and the next
 
         Case vmISentence:
+            ViewToNormal_ doc
             proczone.Expand wdSentence
             If count > 1 Then proczone.MoveEnd wdSentence, count - 1
             proczone.MoveEndWhile CSET_WS, wdBackward
@@ -419,6 +449,7 @@ Private Sub vimRunCommand( _
 
         Case vmIPara, vmEOParagraph
             ' Include EOParagraph (g$) here to avoid duplicating code
+            ViewToNormal_ doc
             
             proczone.Expand wdParagraph
             If motion = vmEOParagraph Then proczone.Start = origpzstart
@@ -456,8 +487,10 @@ Private Sub vimRunCommand( _
     
     ' Extra whitespace.  Takes effect after ninja-feet.
     If space And (colldir = wdCollapseEnd) Then
+        ViewToNormal_ doc
         proczone.MoveEndWhile CSET_WS_ONELINE, wdForward
     ElseIf space And (colldir = wdCollapseStart) Then
+        ViewToNormal_ doc
         proczone.MoveStartWhile CSET_WS_ONELINE, wdBackward
     End If
     
@@ -892,3 +925,8 @@ Private Sub ReplaceRangeFromRegister_(proczone As Range, reg As String, formatte
 End Sub 'ReplaceRangeFromRegister_
 '
 
+Private Sub ViewToNormal_(doc As Document)
+    DidStashView_ = True
+    LastViewType_ = doc.ActiveWindow.View
+    doc.ActiveWindow.View = wdNormalView
+End Sub 'ViewToNormal_
