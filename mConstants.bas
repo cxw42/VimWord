@@ -1,6 +1,7 @@
 Attribute VB_Name = "mConstants"
 ' mConstants: Copyright (c) Chris White 2016--2018.
 '   2018/04/27  chrisw  Imported from Normal.dotm
+'   2019-02-18  chrisw  Removed W_COMMENT from whitespace groups
 
 Option Explicit
 Option Base 0
@@ -44,8 +45,11 @@ Public Enum CHARCODES
 
 End Enum
 
-Public Const WC_WS_CHARS_NOEOL As String = " ^t^s^05"
+Public Const WC_WS_CHARS_NOEOL As String = " ^t^s"
     ' For wildcards.  Whitespace and comment flags, omitting \r\n.
+    ' Note: Comment flags (^05) MUST NOT be include in charsets,
+    ' because Word locks when attempting to traverse them in
+    ' Print Layout view (where they are not visible as characters).
 
 Public Const PAT_EN_DASH As String = "\u2013"
 Public Const PAT_EM_DASH As String = "\u2014"
@@ -65,17 +69,19 @@ Public Const MAGIC_FLAG2_NOT_REAL_TEXT As String = "#.flarp.#"
         ' Should be text that doesn't occur anywhere else in the paragraph.
 
 ' Whitespace
-Public Const PAT_WS_CHARS As String = "\x05\x09\x0a\x0d\x20\xa0" & _
+Public Const PAT_WS_CHARS As String = "\x09\x0a\x0d\x20\xa0" & _
     "\u1680\u180e\u2000\u2001\u2002\u2003\u2004\u2005\u2006" & _
     "\u2007\u2008\u2009\u200a\u200b\u202f\u205f\u3000\ufeff" & _
     "\u2028\u2029"
-    ' The guts of a whitespace character class including NBSP and W_COMMENT.
+    ' The guts of a whitespace character class including NBSP.
     ' Thanks to https://www.cs.tut.fi/~jkorpela/chars/spaces.html for a
     ' consolidated list of unicode spaces.
     ' Also:
     '   http://www.fileformat.info/info/unicode/category/Zs/list.htm
     '   http://www.fileformat.info/info/unicode/category/Zl/list.htm
     '   http://www.fileformat.info/info/unicode/category/Zp/list.htm
+    ' NOTE: W_COMMENT is not included, for consistency with Range
+    ' character sets.
 
 Public Const PAT_WS As String = "[" & PAT_WS_CHARS & "]"
     ' The corresponding character class

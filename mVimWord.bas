@@ -21,6 +21,7 @@ Attribute VB_Name = "mVimWord"
 '                       Added vmLine support.
 '   2018-08-18  chrisw  Added basic register support to c, d, y, p
 '   2019-02-14  chrisw  Switched Undo to cUndoWrapper for 2007 compatibility
+'   2019-02-08  chrisw  Added VIMWORD_* version constants.
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -28,6 +29,10 @@ Attribute VB_Name = "mVimWord"
 
 Option Explicit
 Option Base 0
+
+' Version info
+Private Const VIMWORD_VERSION = "0.3.1"
+Private Const VIMWORD_DATE = "2019-02-18"
 
 ' Scratchpad filename, lower case for comparison
 Private Const SCRATCHPAD_FN_LC = "vimwordscratchpad.dotm"
@@ -43,8 +48,10 @@ Public VimLastCommand_ As String
 '
 
 Public Sub VimDoCommand_About()
-    MsgBox "VimWord version 0.3.0-pre.2, 2018-09-19.  Copyright (c) 2018 Christopher White.  " & _
-            "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later).", _
+    MsgBox SPrintF("VimWord version %s (%s).  Copyright (c) 2018 Christopher White.  " & _
+            "All Rights Reserved.  Licensed CC-BY-NC-SA 4.0 (or later)." & vbCrLf & _
+            "Uses code by Phlip Bradbury <phlipping@yahoo.com>.", _
+            VIMWORD_VERSION, VIMWORD_DATE), _
             vbOKOnly + vbInformation, "About VimWord"
 End Sub 'VimDoCommand_About
 '
@@ -151,7 +158,7 @@ Private Sub vimRunCommand( _
         ChrW(&H3000) & ChrW(&HFEFF) & ChrW(&H2028) & ChrW(&H2029)
         ' NOT comment markers since I've been having problems with those lately
 
-    Dim CSET_WS_ONELINE As String ' Whitespace on a single line
+    Dim CSET_WS_ONELINE As String ' Whitespace on a single line, WITHOUT comment markers
     CSET_WS_ONELINE = " " & ChrW(U_TAB) & Chr(W_NBSP) & _
         ChrW(&H1680) & ChrW(&H180E) & ChrW(&H2000) & ChrW(&H2001) & _
         ChrW(&H2002) & ChrW(&H2003) & ChrW(&H2004) & ChrW(&H2005) & _
