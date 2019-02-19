@@ -24,6 +24,8 @@ Attribute VB_Name = "mVimWord"
 '   2019-02-08  chrisw  Added VIMWORD_* version constants.
 '                       Added LastViewType_ material: switch to Normal view
 '                       before any use of Range.Move{Start,End}{While,Until} (#7).
+'   2019-02-19  chrisw  Fixed logic for vmEOWordBackward (ge) and vmEONonblankBackward (gE).
+'                       Be more selective about ViewNormal_ calls.
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -33,8 +35,8 @@ Option Explicit
 Option Base 0
 
 ' Version info
-Private Const VIMWORD_VERSION = "0.3.2"
-Private Const VIMWORD_DATE = "2019-02-18"
+Private Const VIMWORD_VERSION = "0.3.3-pre.1"
+Private Const VIMWORD_DATE = "2019-02-19"
 
 ' Scratchpad filename, lower case for comparison
 Private Const SCRATCHPAD_FN_LC = "vimwordscratchpad.dotm"
@@ -264,8 +266,11 @@ Private Sub vimRunCommand( _
             End If
             
         Case vmCharForward:
-            ViewToNormal_ doc
-            arg = ExpandCSet_(arg)
+            'ViewToNormal_ doc  ' Instead, use the following precondition check.
+            If InStr(arg, ChrW(W_COMMENT)) > 0 Then GoTo VRC_Finally
+            
+            arg = ExpandCSet_(arg)  ' Never adds W_COMMENT, by invariant.
+            
             colldir = wdCollapseEnd
             For idx = 1 To count
                 If proczone.MoveEndUntil(arg, wdForward) = 0 Then Exit For
@@ -273,16 +278,20 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmCharBackward:
-            ViewToNormal_ doc
+            'ViewToNormal_ doc  ' Instead, use the following precondition check.
+            If InStr(arg, ChrW(W_COMMENT)) > 0 Then GoTo VRC_Finally
             arg = ExpandCSet_(arg)
+            
             colldir = wdCollapseStart
             For idx = 1 To count
                 If proczone.MoveStartUntil(arg, wdBackward) = 0 Then Exit For
                 proczone.MoveStart wdCharacter, -1      ' F => to and including
             Next idx
 
-        Case vmTilForward:
-            ViewToNormal_ doc
+        Case vmTilForward:          ' t
+            'ViewToNormal_ doc  ' Instead, use the following precondition check.
+            If InStr(arg, ChrW(W_COMMENT)) > 0 Then GoTo VRC_Finally
+            
             arg = ExpandCSet_(arg)
             colldir = wdCollapseEnd
             result = proczone.MoveEndUntil(arg, wdForward)
@@ -292,8 +301,10 @@ Private Sub vimRunCommand( _
                 result = proczone.MoveEndUntil(arg, wdForward)
             Next idx
 
-        Case vmTilBackward:
-            ViewToNormal_ doc
+        Case vmTilBackward:         ' T
+            'ViewToNormal_ doc  ' Instead, use the following precondition check.
+            If InStr(arg, ChrW(W_COMMENT)) > 0 Then GoTo VRC_Finally
+            
             arg = ExpandCSet_(arg)
             colldir = wdCollapseStart
             result = proczone.MoveStartUntil(arg, wdBackward)
@@ -303,41 +314,47 @@ Private Sub vimRunCommand( _
                 result = proczone.MoveStartUntil(arg, wdBackward)
             Next idx
 
-        Case vmWordForward:
+        Case vmWordForward:         ' w
             colldir = wdCollapseEnd
             proczone.MoveEnd wdWord, count
 
-        Case vmEOWordForward:
-            ViewToNormal_ doc
+        Case vmEOWordForward:       ' e
             colldir = wdCollapseEnd
             proczone.MoveEnd wdWord, count
+            If proczone.Characters.count <> Len(proczone.Text) Then
+                proczone.End = proczone.Start + Len(proczone.Text)
+                ' If the range ends with a comment character, exclude it to
+                ' avoid lockups (see #7).
+            End If
+            If proczone.Comments.count > 0 Then ViewToNormal_ doc
             proczone.MoveEndWhile CSET_WS, wdBackward
 
-        Case vmWordBackward:
+        Case vmWordBackward:        ' b
             colldir = wdCollapseStart
             proczone.MoveStart wdWord, -count
 
         Case vmEOWordBackward:      ' ge
-            ViewToNormal_ doc
             colldir = wdCollapseEnd
-            proczone.MoveStart wdWord, -count
-            ltmp = proczone.End
-            proczone.Collapse wdCollapseStart
+            
+            proczone.Expand wdWord  ' Get to the start of the current word
+            proczone.MoveStart wdWord, -count   ' Back up the right number of words
+            
+            proczone.Collapse wdCollapseStart   ' Get just that word
             proczone.Expand wdWord
-            proczone.Collapse wdCollapseEnd
-            proczone.MoveStartWhile CSET_WS, wdBackward
-            proczone.End = ltmp
+            If proczone.Comments.count > 0 Then ViewToNormal_ doc   ' #7
+            
+            proczone.MoveEndWhile CSET_WS, wdBackward
 
-        Case vmNonblankForward:
-            ViewToNormal_ doc
+        Case vmNonblankForward:     ' W
+            ViewToNormal_ doc   ' TODO do we need this?  Maybe rewrite in terms of MoveEnd, with a manual WS check
             colldir = wdCollapseEnd
             For idx = 1 To count
                 proczone.MoveEndUntil CSET_WS, wdForward
                 proczone.MoveEndWhile CSET_WS, wdForward
             Next idx
 
-        Case vmEONonblankForward:
-            ViewToNormal_ doc
+        Case vmEONonblankForward:   ' E
+            ViewToNormal_ doc   ' TODO do we need this?
             colldir = wdCollapseEnd
             proczone.MoveEndUntil CSET_WS, wdForward
             For idx = 2 To count
@@ -345,8 +362,8 @@ Private Sub vimRunCommand( _
                 proczone.MoveEndUntil CSET_WS, wdForward
             Next idx
 
-        Case vmNonblankBackward:
-            ViewToNormal_ doc
+        Case vmNonblankBackward:    ' B
+            ViewToNormal_ doc   ' TODO do we need this?
             colldir = wdCollapseStart
             
             ' TODO handle failures (MoveStartUntil returns 0).  Move to
@@ -361,8 +378,10 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmEONonblankBackward:  'gE
-            ViewToNormal_ doc
+            ViewToNormal_ doc   ' TODO do we need this?
             colldir = wdCollapseEnd
+            
+            proczone.Expand wdWord
 
             For idx = 1 To count - 1
                 proczone.MoveStartWhile CSET_WS, wdBackward
@@ -370,6 +389,7 @@ Private Sub vimRunCommand( _
             Next idx
 
             proczone.MoveStartWhile CSET_WS, wdBackward
+            proczone.Collapse wdCollapseStart
 
         Case vmSentenceForward: proczone.MoveEnd wdSentence, count: colldir = wdCollapseEnd
         Case vmSentenceBackward: proczone.MoveStart wdSentence, -count: colldir = wdCollapseStart
@@ -399,10 +419,18 @@ Private Sub vimRunCommand( _
             If count > 1 Then proczone.MoveEnd wdWord, count - 1
 
         Case vmIWord:
-            ViewToNormal_ doc
+            'ViewToNormal_ doc
             proczone.Expand wdWord
             coll = False
             If count > 1 Then proczone.MoveEnd wdWord, count - 1
+                
+            If proczone.Characters.count <> Len(proczone.Text) Then
+                proczone.End = proczone.Start + Len(proczone.Text)
+                ' If the range ends with a comment character, exclude it to
+                ' avoid lockups (see #7).
+            End If
+            If proczone.Comments.count > 0 Then ViewToNormal_ doc
+
             proczone.MoveEndWhile CSET_WS, wdBackward
 
         Case vmANonblank:
@@ -419,7 +447,11 @@ Private Sub vimRunCommand( _
         Case vmINonblank:
             ViewToNormal_ doc
             coll = False
+            
+            ' TODO FIXME: MoveStartUntil fails if the first word in the
+            ' document starts at the first character of the document.
             proczone.MoveStartUntil CSET_WS, wdBackward
+            
             proczone.MoveEndUntil CSET_WS, wdForward
             For idx = 2 To count
                 proczone.MoveEndWhile CSET_WS, wdForward
@@ -427,18 +459,20 @@ Private Sub vimRunCommand( _
             Next idx
 
         Case vmASentence:
-            ViewToNormal_ doc
+            'ViewToNormal_ doc
             proczone.Expand wdSentence
             coll = False
             If count > 1 Then proczone.MoveEnd wdSentence, count - 1
+            If proczone.Comments.count > 0 Then ViewToNormal_ doc
             proczone.MoveEndWhile CSET_WS_BREAKS, wdBackward
                 ' So deleting the last sentence in the paragraph doesn't
                 ' remove the break between that paragraph and the next
 
         Case vmISentence:
-            ViewToNormal_ doc
+            'ViewToNormal_ doc
             proczone.Expand wdSentence
             If count > 1 Then proczone.MoveEnd wdSentence, count - 1
+            If proczone.Comments.count > 0 Then ViewToNormal_ doc
             proczone.MoveEndWhile CSET_WS, wdBackward
             coll = False
 
@@ -449,7 +483,7 @@ Private Sub vimRunCommand( _
 
         Case vmIPara, vmEOParagraph
             ' Include EOParagraph (g$) here to avoid duplicating code
-            ViewToNormal_ doc
+            'ViewToNormal_ doc
             
             proczone.Expand wdParagraph
             If motion = vmEOParagraph Then proczone.Start = origpzstart
@@ -466,6 +500,7 @@ Private Sub vimRunCommand( _
                     End If
                 End If
             End If
+            If proczone.Comments.count > 0 Then ViewToNormal_ doc
             proczone.MoveEndWhile Chr(13), -1   ' Only the last Chr(13)
             coll = (motion = vmEOParagraph)
 
@@ -487,10 +522,12 @@ Private Sub vimRunCommand( _
     
     ' Extra whitespace.  Takes effect after ninja-feet.
     If space And (colldir = wdCollapseEnd) Then
-        ViewToNormal_ doc
+        'ViewToNormal_ doc
+        If proczone.Comments.count > 0 Then ViewToNormal_ doc
         proczone.MoveEndWhile CSET_WS_ONELINE, wdForward
     ElseIf space And (colldir = wdCollapseStart) Then
-        ViewToNormal_ doc
+        'ViewToNormal_ doc
+        If proczone.Comments.count > 0 Then ViewToNormal_ doc
         proczone.MoveStartWhile CSET_WS_ONELINE, wdBackward
     End If
     
@@ -745,12 +782,16 @@ End Function 'GetProczone_V
 '
 
 Private Function ExpandCSet_(arg As String) As String
-' Expand characters to include Unicode equivalents
+' Expand characters to include Unicode equivalents.
+' Invariant: ExpandCSet_ will never add W_COMMENT to a set.
+
     ExpandCSet_ = arg
     Select Case arg
         Case " ": ExpandCSet_ = " " & ChrW(W_NBSP) & ChrW(U_TAB)
+            ' Not W_COMMENT
 
         Case "'": ExpandCSet_ = "'" & ChrW(U_CURLY_APOS) & ChrW(U_CURLY_BACKQUOTE)
+            ' But not ` (single backquote).
 
         Case """": ExpandCSet_ = """" & _
                     ChrW(U_CURLY_OPENDQUOTE) & _
