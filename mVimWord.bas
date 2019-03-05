@@ -26,6 +26,7 @@ Attribute VB_Name = "mVimWord"
 '                       before any use of Range.Move{Start,End}{While,Until} (#7).
 '   2019-02-19  chrisw  Fixed logic for vmEOWordBackward (ge) and vmEONonblankBackward (gE).
 '                       Be more selective about ViewNormal_ calls.
+'   2019-03-05  chrisw  Implemented H, M, L: added HandleHML_ material
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -35,8 +36,8 @@ Option Explicit
 Option Base 0
 
 ' Version info
-Private Const VIMWORD_VERSION = "0.3.3-pre.1"
-Private Const VIMWORD_DATE = "2019-02-19"
+Private Const VIMWORD_VERSION = "0.3.4-pre.1"
+Private Const VIMWORD_DATE = "2019-03-05"
 
 ' Scratchpad filename, lower case for comparison
 Private Const SCRATCHPAD_FN_LC = "vimwordscratchpad.dotm"
@@ -398,17 +399,12 @@ Private Sub vimRunCommand( _
 
         ' H, M, L
         ' -------
-        ' TODO only in wdMainTextStory:
-        ' Use selection.Move{Up,Down} wdScreen to get the screen size implicitly.
-        ' May need to use ranges elsewhere in the document if we're too close to the end.
-        ' Use ActiveWindow.ActivePane.VerticalPercentScrolled to find out where the top is
-        ' in percentage, and then binary-search the range to get close.
-        ' Jump there, then ScrollIntoView just to be on the safe side.
 
-        'Case vmScreenTop
-        'Case vmScreenMiddle
-        'Case vmScreenBottom
-
+        Case vmScreenTop, vmScreenMiddle, vmScreenBottom:
+            Dim hmlrange As Range
+            Set hmlrange = HandleHML_(motion, doc)
+            If Not (hmlrange Is Nothing) Then Set proczone = hmlrange
+            
         ' Text objects
         ' ------------
 
@@ -971,3 +967,51 @@ Private Sub ViewToNormal_(doc As Document)
     LastViewType_ = doc.ActiveWindow.View
     doc.ActiveWindow.View = wdNormalView
 End Sub 'ViewToNormal_
+
+Private Function HandleHML_(motion As VimMotion, doc As Document) As Range
+    Set HandleHML_ = Nothing
+    
+    Dim visible_range As Range, proczone As Range
+    
+    Set visible_range = GetVisibleRange(doc)
+    If visible_range Is Nothing Then
+        Exit Function   ' *** EXIT POINT ***
+    End If
+    
+    Set proczone = visible_range.Duplicate
+    
+    If motion <> vmScreenMiddle Then
+        proczone.Collapse IIf(motion = vmScreenTop, wdCollapseStart, wdCollapseEnd)
+        
+    Else    ' vmScreenMiddle
+        ' TODO improve this hack - for now, go halfway down the range by Chr(13)s.
+        Dim RE13 As VBScript_RegExp_55.RegExp
+        Dim matches As VBScript_RegExp_55.MatchCollection
+        
+        Set RE13 = New VBScript_RegExp_55.RegExp
+        RE13.Pattern = Chr(13)
+        RE13.Global = True
+        Set matches = RE13.Execute(proczone.Text)
+        
+        If matches.count < 5 Then
+            ' Also a hack - for screens with few ^p's visible, just use the middle by characters.
+            proczone.End = proczone.Start + (proczone.End - proczone.Start) / 2
+            proczone.Collapse wdCollapseEnd
+            
+        Else
+            Dim half13s As Long
+            half13s = matches.count / 2
+            proczone.Collapse wdCollapseStart
+            Do While half13s > 0
+                proczone.MoveEndUntil Chr(13)       ' TODO do I need to switch to Print Layout here?
+                                                    ' I don't think so, because ^p's are visible in every view.
+                proczone.MoveEnd wdCharacter, 1     ' Past the Chr(13) so the next MoveEndUntil will work
+                half13s = half13s - 1
+            Loop
+            proczone.Collapse wdCollapseEnd
+        End If
+    End If
+    
+    Set HandleHML_ = proczone
+End Function 'HandleHML_
+'
