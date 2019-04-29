@@ -36,8 +36,8 @@ Option Explicit
 Option Base 0
 
 ' Version info
-Private Const VIMWORD_VERSION = "0.3.4-pre.1"
-Private Const VIMWORD_DATE = "2019-03-05"
+Private Const VIMWORD_VERSION = "0.3.5-pre.1"
+Private Const VIMWORD_DATE = "2019-04-29"
 
 ' Scratchpad filename, lower case for comparison
 Private Const SCRATCHPAD_FN_LC = "vimwordscratchpad.dotm"
@@ -975,7 +975,7 @@ Private Function HandleHML_(motion As VimMotion, doc As Document) As Range
     
     Set visible_range = GetVisibleRange(doc)
     If visible_range Is Nothing Then
-        Exit Function   ' *** EXIT POINT ***
+        Exit Function   ' *** EXIT POINT *** TODO report error?
     End If
     
     Set proczone = visible_range.Duplicate

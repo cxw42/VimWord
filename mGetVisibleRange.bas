@@ -3,6 +3,8 @@ Attribute VB_Name = "mGetVisibleRange"
 ' Copyright (c) 2019 Chris White.  All rights reserved.
 ' History:
 '   2019-03-05  chrisw  Initial version
+'   2019-04-29  chrisw  Added GetCornerRange.  In GCR, added loop and
+'                       test for wdMainTextStory.
 
 Option Explicit
 Option Base 0
@@ -55,8 +57,6 @@ Public Function GetVisibleRange(doc As Document) As Range
     Dim viewport_hwnd As Long
     Dim winrect As RECT
 
-    Dim ThisDocument As Document
-
     InitDimensions  'in case this is the first time this function has been called
 
     viewport_hwnd = FindDocument(win.hwnd)
@@ -64,15 +64,16 @@ Public Function GetVisibleRange(doc As Document) As Range
 
     If GetWindowRect(viewport_hwnd, winrect) = 0 Then Exit Function
 
+    ' Get the corners
     Dim ul As Range, lr As Range
+    Set ul = GetCornerRange(win, winrect, True)
+    Set lr = GetCornerRange(win, winrect, False)
 
-    ' Get the corners.  +/-1s are an attempt to deal with the fact that
-    ' scroll positions that are partial lines may lead to unexpected results,
-    ' e.g., jumping to a line that used to be just off the top of the window.
-    Set ul = win.RangeFromPoint(winrect.Left + 1, winrect.Top + 1)
-    Set lr = win.RangeFromPoint(winrect.Right - 1, winrect.Bottom - 1)
-
-    Set GetVisibleRange = doc.Range(ul.Start, lr.End)
+    If (ul Is Nothing) Or (lr Is Nothing) Then
+        Set GetVisibleRange = Nothing
+    Else
+        Set GetVisibleRange = doc.Range(ul.Start, lr.End)
+    End If
 End Function 'GetVisibleRange
 
 ' ===========================================================================
@@ -120,6 +121,68 @@ Function FindDocument_Callback(ByVal hwnd As Long, ByVal lParam As Long) As Long
         End If
     End If
 End Function
+
+Private Function GetCornerRange(win As Window, winrect As RECT, _
+                                isUL As Boolean) As Range
+' Get the corners.  Only looks in the wdMainTextStory.
+
+    ' How many steps to check in the loop
+    Dim NSTEPS As Long: NSTEPS = 10
+
+    Dim retval As Range: Set retval = Nothing
+
+    ' Set up for the loop.  Loop by Step while abs(Curr-Start)<Limit.
+    Dim xStart As Long, yStart As Long, xLimit As Long, yLimit As Long
+    Dim xCurr As Long, yCurr As Long, xStep As Long, yStep As Long
+
+    xLimit = winrect.Right - winrect.Left
+    yLimit = winrect.Bottom - winrect.Top
+
+    ' +/-1s are an attempt to deal with the fact that
+    ' scroll positions that are partial lines may lead to unexpected results,
+    ' e.g., jumping to a line that used to be just off the top of the window.
+
+    If isUL Then    ' Start at the UL; work right, then down.
+        xStart = winrect.Left + 1
+        xStep = xLimit / NSTEPS
+        yStart = winrect.Top + 1
+        yStep = yLimit / NSTEPS
+
+    Else    ' LR
+        xStart = winrect.Right - 1
+        xStep = -xLimit / NSTEPS
+        yStart = winrect.Bottom - 1
+        yStep = -yLimit / NSTEPS
+
+    End If
+
+    ' The following loop is to deal with an odd case: if the last line of the
+    ' window is a deleted paragraph with a non-deleted comment at the
+    ' beginning, no range is present, so lr becomes Nothing.
+
+    ' Go across rows, then up/down the page.
+    yCurr = yStart
+    Do While Abs(yCurr - yStart) < yLimit
+        xCurr = xStart  ' Start the row
+
+        Do While Abs(xCurr - xStart) < xLimit
+            Set retval = win.RangeFromPoint(xCurr, yCurr)
+
+            If Not (retval Is Nothing) Then
+                If retval.StoryType = wdMainTextStory Then
+                    GoTo GCR_Done   'Found it
+                End If
+            End If
+
+            xCurr = xCurr + xStep
+        Loop 'X
+
+        yCurr = yCurr + yStep   ' Set up for next iter
+    Loop 'Y
+
+GCR_Done:
+    Set GetCornerRange = retval
+End Function 'GetCornerRange
 
 ' ===========================================================================
 ' Debugging helpers
