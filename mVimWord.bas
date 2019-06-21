@@ -27,6 +27,7 @@ Attribute VB_Name = "mVimWord"
 '   2019-02-19  chrisw  Fixed logic for vmEOWordBackward (ge) and vmEONonblankBackward (gE).
 '                       Be more selective about ViewNormal_ calls.
 '   2019-03-05  chrisw  Implemented H, M, L: added HandleHML_ material
+'   2019-06-21  chrisw  Implemented vm[AI]LineDelimBlock
 
 ' General comment: Word puts the cursor between characters; Vim puts the
 ' cursor on characters.  This makes quite a difference.  I may need
@@ -36,8 +37,8 @@ Option Explicit
 Option Base 0
 
 ' Version info
-Private Const VIMWORD_VERSION = "0.3.5-pre.1"
-Private Const VIMWORD_DATE = "2019-04-29"
+Private Const VIMWORD_VERSION = "0.3.5-pre.2"
+Private Const VIMWORD_DATE = "2019-06-21"
 
 ' Scratchpad filename, lower case for comparison
 Private Const SCRATCHPAD_FN_LC = "vimwordscratchpad.dotm"
@@ -500,6 +501,9 @@ Private Sub vimRunCommand( _
             proczone.MoveEndWhile Chr(13), -1   ' Only the last Chr(13)
             coll = (motion = vmEOParagraph)
 
+        Case vmALineDelimBlock, vmILineDelimBlock:  ' B - delimited by ^p^p
+            Set proczone = FindLineDelimBlock_(proczone, motion)
+            
         Case vmMSWordSelection
             If proczone.Start = proczone.End Then GoTo VRC_Finally
                 ' If nothing is selected, don't try to take action.
@@ -922,7 +926,7 @@ Private Sub SaveRangeToRegister_(proczone As Range, reg As String)
     Dim dest As Range
     Set dest = GetRegister_(reg)
     
-    If source.Characters.last = Chr(13) Then
+    If source.Characters.Last = Chr(13) Then
         ' Remember that the proczone ended with a Chr(13) since we can't
         ' store the Chr(13) directly in the single paragraph the register
         ' is allocated.
@@ -944,7 +948,7 @@ Private Sub ReplaceRangeFromRegister_(proczone As Range, reg As String, formatte
     
     Dim need_para As Boolean: need_para = False
     
-    If source.Characters.last = ChrW(U_PU1) Then    ' The register ends with a paragraph mark
+    If source.Characters.Last = ChrW(U_PU1) Then    ' The register ends with a paragraph mark
         need_para = True
         source.MoveEnd wdCharacter, -1      ' TODO check this for robustness in tables
     End If
@@ -1014,4 +1018,40 @@ Private Function HandleHML_(motion As VimMotion, doc As Document) As Range
     
     Set HandleHML_ = proczone
 End Function 'HandleHML_
+'
+
+Private Function FindLineDelimBlock_(proczone As Range, motion As VimMotion) As Range
+    Dim retval As Range
+    Set retval = proczone.Duplicate
+    retval.Expand wdParagraph
+    
+    ' Look for the beginning
+    Do While retval.Start > 0
+        retval.MoveStart wdParagraph, -1
+        If retval.Paragraphs(1).Range.Characters.count = 1 Then
+            If retval.Start > 0 Then
+                retval.MoveStart wdParagraph, 1     ' Don't keep the empty one at the start
+            End If
+            Exit Do     ' One-character para => only ^p, so now we have found ^p^p
+        End If
+    Loop    ' While not at beginning
+    
+    ' Look for the end
+    Dim endrange As Range
+    Set endrange = proczone.Duplicate
+    endrange.Expand wdStory
+    
+    Do While retval.End < endrange.End
+        retval.MoveEnd wdParagraph, 1
+        If retval.Paragraphs.Last.Range.Characters.count = 1 Then
+            ' Found it.  Don't keep the trailing blank line if it's an I motion.
+            If (retval.End < endrange.End) And (motion = vmILineDelimBlock) Then
+                retval.MoveEnd wdParagraph, -1
+            End If
+            Exit Do
+        End If
+    Loop ' while not at end
+    
+    Set FindLineDelimBlock_ = retval
+End Function 'FindLineDelimBlock_
 '

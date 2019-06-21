@@ -14,7 +14,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 ' frmGrabKeys: collect keypresses and parse Vim commands
-' Copyright (c) 2018 Chris White.  All rights reserved.
+' Copyright (c) 2018--2019 Chris White.  All rights reserved.
 ' See changelog in mVimWord for other changes
 '   2018-04-06  chrisw  Initial version
 '   2018-04-20  chrisw  Major expansion/rewrite
@@ -32,6 +32,7 @@ Attribute VB_Exposed = False
 '   2018-07-16  chrisw  Added VHas*Count to support G (vmLine)
 '   2018-08-18  chrisw  Removed VimRegister enum; added register regex and VRegister
 '   2018-09-19  chrisw  Added vmMSWordSelection
+'   2019-06-21  chrisw  Added vm[AI]LineDelimBlock
 
 ' NOTE: the consolidated reference is in :help normal-index
 
@@ -207,8 +208,10 @@ Public Enum VimMotion   ' Motions/objects/direct objects of transitive operators
     vmISentence         ' is
     vmAPara             ' ap (includes Chr(13))
     vmIPara             ' ip (not Chr(13))
+    vmALineDelimBlock   ' aB (not in Vim)
+    vmILineDelimBlock   ' iB (not in Vim)
     ' ab/ib () Not yet implemented
-    ' aB/iB {} "
+    ' a{/i{ {} "
     ' at/it    " <tag></tag>
     ' a</i< <> "
     ' a[/i[ [] "
@@ -361,18 +364,16 @@ Private Sub UserForm_Initialize()
     Dim RE_PAT As String
 
     ' === Build up the regex ===
-    ' The following code is from the output of `re2vba.pl --nodim vim-regex.txt`.
+    ' The following code is from the output of `re2vba.pl vim-regex.txt`.
     ' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
     ' and re-run re2vba.pl.
-    
-
 
     RE_PAT = _
         "^((\""([0-9a-z]))?([ ]?)([1-9][0-9]*)?(([ ]?)(([HMLGhjklwbWB" & _
         "\x28\x29\x7b\x7d]|g?[eE0\^\$]|\x0d|[fFtT](.))|(gW)?g?[\*#]|g" & _
-        "?[pP])|([cdyvX])([1-9][0-9]*)?(([\[\]])?([ai])([wWsp])|[fFtT" & _
-        "](.)|[HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$]|\x0d)|([x\.]" & _
-        ")))$" & _
+        "?[pP])|([cdyvX])([1-9][0-9]*)?(([\[\]])?([ai])([wWspB])|[fFt" & _
+        "T](.)|[HMLGhjklwbWB\x28\x29\x7b\x7d]|g?[eE0\^\$]|\x0d)|([x\." & _
+        "])))$" & _
         ""
     RESM_REGISTER = 2
     RESM_SPACEONE = 3
@@ -390,7 +391,8 @@ Private Sub UserForm_Initialize()
     RESM_TTEXT = 17
     RESM_TVERBABBR = 18
 
-    ' === End of generated code ===
+    ' End of generated code
+    ' =============================
 
     Set RE_ACT = New VBScript_RegExp_55.RegExp
     RE_ACT.IgnoreCase = False
@@ -616,6 +618,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
                         Case "W": VMotion = vmANonblank
                         Case "s": VMotion = vmASentence
                         Case "p": VMotion = vmAPara
+                        Case "B": VMotion = vmALineDelimBlock
                         Case Else: Exit Function
                     End Select
 
@@ -625,6 +628,7 @@ Private Function ProcessHit_(hit As VBScript_RegExp_55.Match) As Boolean
                         Case "W": VMotion = vmINonblank
                         Case "s": VMotion = vmISentence
                         Case "p": VMotion = vmIPara
+                        Case "B": VMotion = vmILineDelimBlock
                         Case Else: Exit Function
                     End Select
 

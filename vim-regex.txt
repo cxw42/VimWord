@@ -1,10 +1,11 @@
 # vim normal-mode regex, in re2vba.pl input format.
-# Copyright (c) Chris White 2018.
+# Copyright (c) Chris White 2018--2019.
 # CC-BY-NC-SA 4.0, or any later version, at your option.
 # Useful command line:
 # ./re2vba.pl --nodim vim-regex.txt |tee >(putclip)
 
-# Available normal-mode commands: at least Q (no Ex mode), U (Word doesn't
+# Note: normal-mode commands defined by Vim but available to be
+# repurposed by VimWord: at least Q (no Ex mode), U (Word doesn't
 # save undo information per line).
 
 # Main pattern
@@ -57,10 +58,12 @@ intrans     (?<iverb>
                         # ITEXT: character to jump to
 
 # Text-object selection ([ai][something])
+# Difference from Vim: B (block) is delimited by ^p^p.  `{` and `}` are still
+# available for brace-delimited blocks.
 textobj     (?<ninja>[\[\]])?               (?# Ninja-feet marker)
                                     # https://github.com/tommcdo/vim-ninja-feet
             (?<tobj_range>[ai])             (?# Introducer)
-            (?<objtype>[wWsp])              (?# Type of text object)
+            (?<objtype>[wWspB])             (?# Type of text object)
 
 # Transitive: verb, count, object, object type, text
 trans       (?<tverb>[cdyvX])               (?# TVERB: what to do)
