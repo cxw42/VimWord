@@ -1,6 +1,6 @@
 #!perl
 # Convert a Perl regex to a VBA implementation somewhat like that regex.
-# Copyright (C) Chris White 2018.  Licensed Artistic 2.0.
+# Copyright (C) Chris White 2018.  Licensed MIT.
 #
 use 5.018;
 use strict;
@@ -152,6 +152,14 @@ sub Main
 
     # Process the definitions, and print them if desired
     my $I = ($opts{indent} ? ' ' : '');     # indent string
+    my $I4 = $I x 4;
+    my $I8 = $I x 8;
+
+    say <<"EOT";
+$I4' The following code is from the output of \`re2vba.pl vim-regex.txt\`.
+$I4' DO NOT MODIFY HERE.  If you need to change it, modify vim-regex.txt
+$I4' and re-run re2vba.pl.
+EOT
 
     for(my $idx=0; $idx < $groupidx; ++$idx) {
         next unless exists $names{$idx};
@@ -159,23 +167,25 @@ sub Main
         $name = uc $name;
         $name =~ s{[^a-zA-Z0-9]}{_}g;
         $names{$idx} = $name;
-        say(($opts{private} ? 'Private ' : ($I x 4) . 'Dim '),
+        say(($opts{private} ? 'Private ' : ($I4) . 'Dim '),
             "RESM_$name As Long") if $opts{dim};
     }
-    say(($opts{private} ? 'Private ' : ($I x 4) . 'Dim '),
-        "RE_PAT As String") if $opts{dim};
+    say(($opts{private} ? 'Private ' : ($I4) . 'Dim '),
+        "RE_PAT As String\n") if $opts{dim};
 
     # Print the regex, with lines broken
-    say "\n", $I x 4, "RE_PAT = _";
+    say $I4, "RE_PAT = _";
     while($full_regex =~ m{(.{0,60})}g) {
-        say $I x 8, "\"$1\" & _" if $1;
+        say $I8, "\"$1\" & _" if $1;
     }
-    say $I x 8, "\"\"";
+    say $I8, "\"\"";
 
     # Print the submatch numbers
     for(my $idx=0; $idx < $groupidx; ++$idx) {
-        say $I x 4, "RESM_$names{$idx} = $idx" if exists $names{$idx};
+        say $I4, "RESM_$names{$idx} = $idx" if exists $names{$idx};
     }
+
+    say "\n${I4}' End of generated code";
 
     return 0;
 } #Main()
