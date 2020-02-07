@@ -28,12 +28,21 @@ Private Declare Function GetClassName Lib "user32" Alias "GetClassNameA" (ByVal 
 Private Declare Function EnumChildWindows Lib "user32" (ByVal hWndParent As Long, ByVal lpEnumFunc As Long, ByVal lParam As Long) As Long
 Private Declare Function SendMessageStr Lib "user32" Alias "SendMessageA" (ByVal hwnd As Long, ByVal wMsg As Long, ByVal wParam As Long, ByVal lParam As String) As Long
 Private Declare Function GetWindowRect Lib "user32" (ByVal hwnd As Long, lpRect As RECT) As Long
+Private Declare Function GetForegroundWindow Lib "user32" () As Long
 
 ' --- Constants -----------------------------------------
 
 ' Identifying information
+Private Const Word2007_Document_Class As String = "_WwG"
+Private Const Word2007_Document_Title As String = "Microsoft Word Document"
 Private Const Word2013_Document_Class As String = "_WwG"
 Private Const Word2013_Document_Title As String = "Microsoft Word Document"
+
+' *** Caution: I don't know if these are actually correct ***
+Private Const Word2010_Document_Class As String = "_WwG"
+Private Const Word2010_Document_Title As String = "Microsoft Word Document"
+Private Const Word2016_Document_Class As String = "_WwG"
+Private Const Word2016_Document_Title As String = "Microsoft Word Document"
 
 ' --- Private data --------------------------------------
 Private gDocHwnd_ As Long   ' The EnumChildWindows callback's return value
@@ -55,11 +64,23 @@ Public Function GetVisibleRange(doc As Document) As Range
 
     Set GetVisibleRange = Nothing
     Dim viewport_hwnd As Long
+    Dim win_hwnd As Long
     Dim winrect As RECT
 
     InitDimensions  'in case this is the first time this function has been called
 
-    viewport_hwnd = FindDocument(win.hwnd)
+    If CLng(Application.Version) > 12 Then      ' Office 2007 doesn't have Window.HWnd
+        Dim owin As Object
+        Set owin = win
+        win_hwnd = owin.hwnd
+    Else
+        doc.Activate
+        Application.Activate
+        win_hwnd = GetForegroundWindow
+    End If
+    
+    'DEBUGFindDocument win_hwnd      ' Uncomment to print all child windows
+    viewport_hwnd = FindDocument(win_hwnd)
     If viewport_hwnd = 0 Then Exit Function
 
     If GetWindowRect(viewport_hwnd, winrect) = 0 Then Exit Function
@@ -83,10 +104,20 @@ Private Sub InitDimensions()
 ' Initialize the global variables holding class names.
     If gTargetInitialized Then Exit Sub
 
-    If CLng(Application.Version) = 15 Then
+    If CLng(Application.Version) = 16 Then
+        gTargetDocumentClass = Word2016_Document_Class
+        gTargetDocumentTitle = Word2016_Document_Title
+    ElseIf CLng(Application.Version) = 15 Then
         gTargetDocumentClass = Word2013_Document_Class
         gTargetDocumentTitle = Word2013_Document_Title
-    Else    ' unknown version - let the methods fail but don't annoy the user otherwise.
+    ElseIf CLng(Application.Version) = 14 Then
+        gTargetDocumentClass = Word2010_Document_Class
+        gTargetDocumentTitle = Word2010_Document_Title
+    ' v13 = nonexistent
+    ElseIf CLng(Application.Version) = 12 Then
+        gTargetDocumentClass = Word2007_Document_Class
+        gTargetDocumentTitle = Word2007_Document_Title
+    Else    ' unknown or unsupported version - let the methods fail but don't annoy the user otherwise.
         gTargetDocumentClass = ""
         gTargetDocumentTitle = ""
     End If
